@@ -33,10 +33,12 @@ options(tigris_use_cache = FALSE) # caching handled by src/download_data.R
 options(scipen = 999) # suppress scientific notation
 ```
 
-# Prepare and Load Data
+# Data
+
+## Prepare
 
 ```{r}
-#| label: load-data
+#| label: prepare
 source("src/download_data.R")
 config <- load_config()
 settings <- load_settings()
@@ -82,8 +84,12 @@ county_names_in <- paste0("'", county_order, "'", collapse = ", ")
 
 # TAZ projection layers use integer CO_FIPS (standard 3-digit FIPS as integer: '035' -> 35)
 co_fips_int_in <- paste(as.integer(county_fips), collapse = ", ")
+```
 
-# --- Read spatial layers via sf::read_sf() with query/wkt_filter where applicable ---
+## Load
+
+```{r}
+#| label: load
 
 oz_tracts <- sf::read_sf(
   cache_paths$oz_eligible_tracts,
