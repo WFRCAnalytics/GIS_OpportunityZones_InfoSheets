@@ -28,7 +28,7 @@ library(stringr)
 library(ggplot2)
 library(knitr)
 
-# Report assembly — install with renv::install(c("quarto", "tinytable"))
+# Report assembly
 library(quarto)
 library(tinytable)
 
@@ -83,7 +83,7 @@ county_geoids <- paste0(state_fips, county_fips)
 cache_paths <- download_all(config)
 
 # Shared SQL IN clauses for county filtering
-county_fips_in  <- paste0("'", county_fips,  "'", collapse = ", ")
+county_fips_in <- paste0("'", county_fips, "'", collapse = ", ")
 county_names_in <- paste0("'", county_order, "'", collapse = ", ")
 
 # TAZ projection layers use integer CO_FIPS (standard 3-digit FIPS as integer: '035' -> 35)
@@ -94,7 +94,6 @@ co_fips_int_in <- paste(as.integer(county_fips), collapse = ", ")
 
 ```{r}
 #| label: load
-
 oz_tracts <- sf::read_sf(
   cache_paths$oz_eligible_tracts,
   query = sprintf(
@@ -175,7 +174,8 @@ wc_centers <- sf::read_sf(
   cache_paths$wasatch_choice_centers,
   query = "SELECT OBJECTID, CenterName, CenterType, geom FROM wasatch_choice_centers"
 ) |>
-  sf::st_transform(crs)
+  sf::st_transform(crs) |>
+  sf::st_make_valid()
 
 # mode is a comma-separated string (e.g. "Bus, BRT") — use LIKE for each target mode
 uta_stops <- sf::read_sf(
@@ -192,7 +192,8 @@ sap_buffers <- sf::read_sf(
   cache_paths$sap_buffers,
   query = "SELECT OBJECTID, geom FROM sap_buffers"
 ) |>
-  sf::st_transform(crs)
+  sf::st_transform(crs) |>
+  sf::st_make_valid()
 
 # Geometry only — xid is the OID field for this layer
 freeway_exits <- sf::read_sf(
@@ -248,7 +249,11 @@ taz_pop_projections <- sf::read_sf(
 
 # --- ACS: non-spatial, read from RDS; pivot to one row per tract ---
 
-acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
+acs <- readr::read_csv(
+  cache_paths$acs,
+  col_types = readr::cols(GEOID = readr::col_character()),
+  show_col_types = FALSE
+) |>
   dplyr::filter(stringr::str_sub(GEOID, 1, 5) %in% county_geoids) |>
   dplyr::select(GEOID, variable, estimate) |>
   tidyr::pivot_wider(names_from = variable, values_from = estimate)
@@ -258,10 +263,9 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
 
 ```{r}
 #| label: tract-info
-
 # Total tract area (m² → acres; CRS 26912 is metric)
 total_acres_df <- data.frame(
-  GEOID       = oz_tracts$GEOID,
+  GEOID = oz_tracts$GEOID,
   total_acres = as.numeric(sf::st_area(oz_tracts)) / 4046.8564
 )
 
@@ -281,7 +285,7 @@ oz1_overlap <- suppressWarnings(
 # Developable acres — area-proportioned from ATO DEVACRES where TAZ boundaries
 # cross tract boundaries: contribution = DEVACRES × (intersection_area / TAZ_area)
 ato_areas_df <- data.frame(
-  TAZID    = ato$TAZID,
+  TAZID = ato$TAZID,
   taz_area = as.numeric(sf::st_area(ato))
 )
 dev_acres_df <- suppressWarnings(
@@ -303,14 +307,14 @@ tract_info <- oz_tracts |>
   sf::st_drop_geometry() |>
   dplyr::select(GEOID, county, COUNTYF) |>
   dplyr::left_join(
-    dplyr::select(acs, GEOID, pop = B01003_001, hh = B11001_001),
+    dplyr::select(acs, GEOID, pop = population, hh = households),
     by = "GEOID"
   ) |>
   dplyr::left_join(total_acres_df, by = "GEOID") |>
-  dplyr::left_join(oz1_overlap,    by = "GEOID") |>
+  dplyr::left_join(oz1_overlap, by = "GEOID") |>
   dplyr::mutate(
     oz1_acres = dplyr::coalesce(oz1_acres, 0),
-    oz1_pct   = round(oz1_acres / total_acres * 100, 1)
+    oz1_pct = round(oz1_acres / total_acres * 100, 1)
   ) |>
   dplyr::left_join(dev_acres_df, by = "GEOID") |>
   dplyr::arrange(county, GEOID)
@@ -320,7 +324,6 @@ tract_info <- oz_tracts |>
 
 ```{r}
 #| label: centers
-
 # Intersect oz_tracts with Wasatch Choice centers — acres per CenterType per tract
 wc_intersection <- suppressWarnings(
   sf::st_intersection(
@@ -340,17 +343,17 @@ centers_info <- oz_tracts |>
   sf::st_drop_geometry() |>
   dplyr::select(GEOID) |>
   dplyr::left_join(wc_intersection, by = "GEOID") |>
-  dplyr::left_join(total_acres_df,  by = "GEOID") |>
+  dplyr::left_join(total_acres_df, by = "GEOID") |>
   dplyr::mutate(
-    pct    = round(acres / total_acres * 100, 1),
+    pct = round(acres / total_acres * 100, 1),
     col_id = tolower(gsub("[^a-zA-Z0-9]+", "_", CenterType))
   ) |>
   dplyr::select(GEOID, col_id, acres, pct) |>
   tidyr::pivot_wider(
-    names_from  = col_id,
+    names_from = col_id,
     values_from = c(acres, pct),
     values_fill = 0,
-    names_glue  = "wc_{.value}_{col_id}"
+    names_glue = "wc_{.value}_{col_id}"
   )
 ```
 
@@ -358,7 +361,6 @@ centers_info <- oz_tracts |>
 
 ```{r}
 #| label: housing
-
 # Assign each housing polygon to the tract containing its centroid.
 # Centroid assignment is appropriate for parcel-level inventory data — units
 # belong to one tract; area-proportioning is not needed.
@@ -374,8 +376,8 @@ housing_joined <- sf::st_join(
 housing_totals <- housing_joined |>
   dplyr::group_by(GEOID) |>
   dplyr::summarise(
-    units_total     = sum(UNIT_COUNT, na.rm = TRUE),
-    res_acres_total = sum(ACRES,      na.rm = TRUE),
+    units_total = sum(UNIT_COUNT, na.rm = TRUE),
+    res_acres_total = sum(ACRES, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -385,9 +387,9 @@ housing_by_type <- housing_joined |>
   dplyr::group_by(GEOID, TYPE) |>
   dplyr::summarise(units = sum(UNIT_COUNT, na.rm = TRUE), .groups = "drop") |>
   tidyr::pivot_wider(
-    names_from   = TYPE,
-    values_from  = units,
-    values_fill  = 0L,
+    names_from = TYPE,
+    values_from = units,
+    values_fill = 0L,
     names_prefix = "units_"
   )
 
@@ -396,35 +398,34 @@ housing_by_type <- housing_joined |>
 housing_acres <- housing_joined |>
   dplyr::mutate(
     acre_cat = dplyr::case_when(
-      TYPE == "SFD"             ~ "sfd",
+      TYPE == "SFD" ~ "sfd",
       TYPE %in% c("MF", "SFA") ~ "mf_sfa",
-      TRUE                      ~ NA_character_
+      TRUE ~ NA_character_
     )
   ) |>
   dplyr::filter(!is.na(acre_cat)) |>
   dplyr::group_by(GEOID, acre_cat) |>
   dplyr::summarise(acres = sum(ACRES, na.rm = TRUE), .groups = "drop") |>
   tidyr::pivot_wider(
-    names_from   = acre_cat,
-    values_from  = acres,
-    values_fill  = 0,
+    names_from = acre_cat,
+    values_from = acres,
+    values_fill = 0,
     names_prefix = "res_acres_"
   )
 
 housing_info <- oz_tracts |>
   sf::st_drop_geometry() |>
   dplyr::select(GEOID) |>
-  dplyr::left_join(housing_totals,  by = "GEOID") |>
+  dplyr::left_join(housing_totals, by = "GEOID") |>
   dplyr::left_join(housing_by_type, by = "GEOID") |>
-  dplyr::left_join(housing_acres,   by = "GEOID") |>
-  dplyr::mutate(dplyr::across(where(is.numeric), ~dplyr::coalesce(.x, 0)))
+  dplyr::left_join(housing_acres, by = "GEOID") |>
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ dplyr::coalesce(.x, 0)))
 ```
 
 ## Transit
 
 ```{r}
 #| label: transit
-
 # ---- UTA Rail / BRT stops within each tract ----
 # uta_stops is already filtered to TRAX, FrontRunner, BRT at read time
 stops_within <- sf::st_join(
@@ -445,17 +446,19 @@ stops_within <- sf::st_join(
 # set to NA for tracts that already have stops within
 nearest_stop_idx <- sf::st_nearest_feature(oz_tracts, uta_stops)
 transit_dist_df <- data.frame(
-  GEOID            = oz_tracts$GEOID,
-  dist_edge_mi     = as.numeric(sf::st_distance(
+  GEOID = oz_tracts$GEOID,
+  dist_edge_mi = as.numeric(sf::st_distance(
     oz_tracts,
     uta_stops[nearest_stop_idx, ],
     by_element = TRUE
-  )) * 0.000621371,
+  )) *
+    0.000621371,
   dist_centroid_mi = as.numeric(sf::st_distance(
     suppressWarnings(sf::st_centroid(oz_tracts)),
     uta_stops[nearest_stop_idx, ],
     by_element = TRUE
-  )) * 0.000621371
+  )) *
+    0.000621371
 )
 
 # ---- SAP buffer intersection — acres and % of tract ----
@@ -486,8 +489,10 @@ ato_transit_df <- suppressWarnings(
   dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
   dplyr::group_by(GEOID) |>
   dplyr::summarise(
-    ato_jobtransit = sum(JOBTRANSIT_23 * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
-    ato_hhtransit  = sum(HHTRANSIT_23  * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    ato_jobtransit = sum(JOBTRANSIT_23 * weight, na.rm = TRUE) /
+      sum(weight, na.rm = TRUE),
+    ato_hhtransit = sum(HHTRANSIT_23 * weight, na.rm = TRUE) /
+      sum(weight, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -497,18 +502,29 @@ ato_transit_df <- suppressWarnings(
 transit_info <- oz_tracts |>
   sf::st_drop_geometry() |>
   dplyr::select(GEOID) |>
-  dplyr::left_join(stops_within,   by = "GEOID") |>
+  dplyr::left_join(stops_within, by = "GEOID") |>
   dplyr::mutate(transit_stop_count = dplyr::coalesce(transit_stop_count, 0L)) |>
   dplyr::left_join(transit_dist_df, by = "GEOID") |>
   dplyr::mutate(
-    dist_edge_mi     = dplyr::if_else(transit_stop_count > 0, NA_real_, dist_edge_mi),
-    dist_centroid_mi = dplyr::if_else(transit_stop_count > 0, NA_real_, dist_centroid_mi)
+    dist_edge_mi = dplyr::if_else(
+      transit_stop_count > 0,
+      NA_real_,
+      dist_edge_mi
+    ),
+    dist_centroid_mi = dplyr::if_else(
+      transit_stop_count > 0,
+      NA_real_,
+      dist_centroid_mi
+    )
   ) |>
   dplyr::left_join(sap_overlap, by = "GEOID") |>
-  dplyr::left_join(dplyr::select(total_acres_df, GEOID, total_acres), by = "GEOID") |>
+  dplyr::left_join(
+    dplyr::select(total_acres_df, GEOID, total_acres),
+    by = "GEOID"
+  ) |>
   dplyr::mutate(
     sap_acres = dplyr::coalesce(sap_acres, 0),
-    sap_pct   = round(sap_acres / total_acres * 100, 1)
+    sap_pct = round(sap_acres / total_acres * 100, 1)
   ) |>
   dplyr::select(-total_acres) |>
   dplyr::left_join(ato_transit_df, by = "GEOID")
@@ -518,7 +534,6 @@ transit_info <- oz_tracts |>
 
 ```{r}
 #| label: auto
-
 # ---- Freeway interchanges within each tract ----
 interchanges_within <- sf::st_join(
   dplyr::select(oz_tracts, GEOID),
@@ -533,17 +548,19 @@ interchanges_within <- sf::st_join(
 # Distance to nearest interchange — cleared for tracts that already have one
 nearest_exit_idx <- sf::st_nearest_feature(oz_tracts, freeway_exits)
 exit_dist_df <- data.frame(
-  GEOID                = oz_tracts$GEOID,
-  exit_dist_edge_mi    = as.numeric(sf::st_distance(
+  GEOID = oz_tracts$GEOID,
+  exit_dist_edge_mi = as.numeric(sf::st_distance(
     oz_tracts,
     freeway_exits[nearest_exit_idx, ],
     by_element = TRUE
-  )) * 0.000621371,
+  )) *
+    0.000621371,
   exit_dist_centroid_mi = as.numeric(sf::st_distance(
     suppressWarnings(sf::st_centroid(oz_tracts)),
     freeway_exits[nearest_exit_idx, ],
     by_element = TRUE
-  )) * 0.000621371
+  )) *
+    0.000621371
 )
 
 # ---- ATO auto scores — weighted avg by proportioned DEVACRES ----
@@ -561,8 +578,10 @@ ato_auto_df <- suppressWarnings(
   dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
   dplyr::group_by(GEOID) |>
   dplyr::summarise(
-    ato_jobauto = sum(JOBAUTO_23 * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
-    ato_hhauto  = sum(HHAUTO_23  * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    ato_jobauto = sum(JOBAUTO_23 * weight, na.rm = TRUE) /
+      sum(weight, na.rm = TRUE),
+    ato_hhauto = sum(HHAUTO_23 * weight, na.rm = TRUE) /
+      sum(weight, na.rm = TRUE),
     .groups = "drop"
   )
 
@@ -574,8 +593,16 @@ auto_info <- oz_tracts |>
   dplyr::mutate(freeway_exit_count = dplyr::coalesce(freeway_exit_count, 0L)) |>
   dplyr::left_join(exit_dist_df, by = "GEOID") |>
   dplyr::mutate(
-    exit_dist_edge_mi     = dplyr::if_else(freeway_exit_count > 0, NA_real_, exit_dist_edge_mi),
-    exit_dist_centroid_mi = dplyr::if_else(freeway_exit_count > 0, NA_real_, exit_dist_centroid_mi)
+    exit_dist_edge_mi = dplyr::if_else(
+      freeway_exit_count > 0,
+      NA_real_,
+      exit_dist_edge_mi
+    ),
+    exit_dist_centroid_mi = dplyr::if_else(
+      freeway_exit_count > 0,
+      NA_real_,
+      exit_dist_centroid_mi
+    )
   ) |>
   dplyr::left_join(ato_auto_df, by = "GEOID")
 ```
@@ -584,12 +611,11 @@ auto_info <- oz_tracts |>
 
 ```{r}
 #| label: growth
-
 # Helper: area-proportion (YEAR2037 - YEAR2027) from a TAZ projection layer
 # onto oz_tracts. Uses plain area proportioning — no DEVACRES in these layers.
 .proportion_growth <- function(taz_layer, value_col) {
   taz_areas <- data.frame(
-    TAZID    = taz_layer$TAZID,
+    TAZID = taz_layer$TAZID,
     taz_area = as.numeric(sf::st_area(taz_layer))
   )
   suppressWarnings(
@@ -610,24 +636,23 @@ auto_info <- oz_tracts |>
     )
 }
 
-hh_growth_df  <- .proportion_growth(taz_hh_projections,  "hh_added")
+hh_growth_df <- .proportion_growth(taz_hh_projections, "hh_added")
 pop_growth_df <- .proportion_growth(taz_pop_projections, "pop_added")
 job_growth_df <- .proportion_growth(taz_job_projections, "jobs_added")
 
 growth_info <- oz_tracts |>
   sf::st_drop_geometry() |>
   dplyr::select(GEOID) |>
-  dplyr::left_join(hh_growth_df,  by = "GEOID") |>
+  dplyr::left_join(hh_growth_df, by = "GEOID") |>
   dplyr::left_join(pop_growth_df, by = "GEOID") |>
   dplyr::left_join(job_growth_df, by = "GEOID") |>
-  dplyr::mutate(dplyr::across(where(is.numeric), ~dplyr::coalesce(.x, 0L)))
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ dplyr::coalesce(.x, 0L)))
 ```
 
 ## Urban Institute
 
 ```{r}
 #| label: urban-institute
-
 # Socioeconomic indicators from oz_eligible_tracts (pvrty_r, unmpl_r, mfi) joined
 # with oztoolclassification from the Urban Institute layer.
 # Inspect names(oz_ui) to see all additional fields available from that layer.
@@ -811,28 +836,27 @@ tract_maps[["49035102900"]]
 ```{r}
 #| label: report
 #| eval: false
-
 # Join all data sections into a single master table (one row per tract)
 report_data <- tract_info |>
   dplyr::left_join(centers_info, by = "GEOID") |>
   dplyr::left_join(housing_info, by = "GEOID") |>
   dplyr::left_join(transit_info, by = "GEOID") |>
-  dplyr::left_join(auto_info,    by = "GEOID") |>
-  dplyr::left_join(growth_info,  by = "GEOID") |>
-  dplyr::left_join(ui_info,      by = "GEOID")
+  dplyr::left_join(auto_info, by = "GEOID") |>
+  dplyr::left_join(growth_info, by = "GEOID") |>
+  dplyr::left_join(ui_info, by = "GEOID")
 
 # Persist to disk — child documents run in separate R sessions and cannot
 # access the parent environment directly
 saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
-saveRDS(tract_maps,  file.path(remotes_dir, "tract_maps.rds"))
+saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
 
 # Render one Typst PDF per county; county order preserved via factor levels
 dir.create(settings$output_dir, showWarnings = FALSE, recursive = TRUE)
 purrr::walk(levels(report_data$county), function(county_name) {
   out_file <- paste0(gsub(" ", "_", county_name), "_OZ_Info_Sheet.pdf")
   quarto::quarto_render(
-    input          = "_county_report.qmd",
-    output_file    = out_file,
+    input = "_county_report.qmd",
+    output_file = out_file,
     execute_params = list(county = county_name, data_dir = remotes_dir)
   )
   file.rename(out_file, file.path(settings$output_dir, out_file))
