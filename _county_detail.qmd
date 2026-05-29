@@ -1,0 +1,215 @@
+---
+params:
+  county: "Salt Lake"
+  data_dir: "data/remotes"
+format:
+  typst:
+    margin:
+      x: 0.4in
+      y: 0.35in
+    fontsize: 8pt
+---
+
+```{=typst}
+#set page(flipped: true)
+#set text(size: 7pt)
+```
+
+```{r}
+#| label: setup
+#| include: false
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(yaml)
+
+settings    <- yaml::read_yaml("config/settings.yml")
+report_data <- readRDS(file.path(params$data_dir, "report_data.rds"))
+tract_maps  <- readRDS(file.path(params$data_dir, "tract_maps.rds"))
+
+county_data <- dplyr::filter(report_data, county == params$county) |>
+  dplyr::arrange(GEOID)
+
+county_maps <- tract_maps[county_data$GEOID]
+```
+
+```{r}
+#| label: save-maps
+#| include: false
+# Same PNG cache as summary — shared map_cache/ directory.
+map_dir <- file.path(params$data_dir, "map_cache")
+dir.create(map_dir, showWarnings = FALSE)
+
+map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
+  path <- file.path(map_dir, paste0(geoid, ".png"))
+  ggplot2::ggsave(
+    filename = path,
+    plot     = map,
+    width    = settings$map_width_in,
+    height   = settings$map_height_in,
+    dpi      = 200,
+    bg       = "white"
+  )
+  path
+})
+```
+
+```{r}
+#| label: pages
+#| results: asis
+#| echo: false
+
+# Format a single metric; returns em-dash for NA / non-finite values.
+fmt_val <- function(x, digits = 1, suffix = "") {
+  if (length(x) == 0 || is.na(x)) return("—")
+  if (is.numeric(x) && !is.finite(x)) return("—")
+  paste0(round(x, digits), suffix)
+}
+
+# Safe column access — returns NA_real_ when a column is absent.
+col_val <- function(data, col) {
+  if (col %in% names(data)) data[[col]] else NA_real_
+}
+
+# Build the Typst content block for one tract page.
+tract_page <- function(tract, map_path, is_first) {
+  g  <- function(col)                 col_val(tract, col)
+  fv <- function(col, d = 1, s = "") fmt_val(g(col), d, s)
+
+  county_str <- as.character(g("county"))
+  geoid_str  <- as.character(g("GEOID"))
+  oz_class   <- if (is.na(g("oztoolclassification"))) "—"
+                else as.character(g("oztoolclassification"))
+  pvrty_str  <- if (is.na(g("pvrty_r"))) "—" else as.character(g("pvrty_r"))
+  unmpl_str  <- if (is.na(g("unmpl_r"))) "—" else as.character(g("unmpl_r"))
+  mfi_str    <- if (is.na(g("mfi")))     "—"
+                else format(as.integer(g("mfi")), big.mark = ",", scientific = FALSE)
+
+  pb <- if (!is_first) "#pagebreak()\n" else ""
+
+  # Section header helper — dark fill, white bold text
+  sec <- function(label) {
+    sprintf('table.cell(colspan: 2, fill: rgb("#003b4f"), inset: (x: 4pt, y: 3pt))[#text(fill: white, weight: "bold")[%s]]', label)
+  }
+
+  # Key-value row helper
+  kv <- function(label, value) {
+    sprintf("    [%s], [%s],", label, value)
+  }
+
+  # Inner table helper — 2-column label/value table with section header
+  inner_tbl <- function(header, rows) {
+    paste0(c(
+      "#table(columns: (auto, 1fr), stroke: none, inset: (x: 3pt, y: 2pt),",
+      paste0("  ", sec(header), ","),
+      rows,
+      ")"
+    ), collapse = "\n")
+  }
+
+  lines <- c(
+    pb,
+
+    # ── Full-width header band ──────────────────────────────────────────────
+    sprintf(
+      '#block(width: 100%%, fill: rgb("#003b4f"), inset: (x: 0.15in, y: 0.07in))[#grid(columns: (1fr, auto))[#text(fill: white, weight: "bold", size: 9pt)[%s County — Tract %s]][#align(right)[#text(fill: rgb("#7ec8e3"), size: 7pt)[%s]]]]',
+      county_str, geoid_str, oz_class
+    ),
+    "#v(0.08in)",
+
+    # ── Top row: map | basics+composites | centers | housing | urban inst. ──
+    "#grid(columns: (2.8in, 1.8in, 1.8in, 1.5in, 1.5in), gutter: 0.1in,",
+
+    # Col 1: Map
+    sprintf('  image("%s", width: 100%%),', map_path),
+
+    # Col 2: Tract basics + 4 composites
+    paste0("  ", inner_tbl("Tract Basics", c(
+      kv("Population",     fv("pop",          0)),
+      kv("Households",     fv("hh",           0)),
+      kv("Total Acres",    fv("total_acres",   1)),
+      sprintf("    [OZ 1.0 Acres], [%s (%s%%)],", fv("oz1_acres", 1), fv("oz1_pct", 1)),
+      kv("Dev. Acres",     fv("dev_acres",     1))
+    )), ","),
+    paste0("  ", inner_tbl("Composite Metrics", c(
+      kv("MUorC Coverage",   fv("wc_muc_pct",             1, "%")),
+      kv("ATO Score (0-100)",fv("ato_composite",           1)),
+      kv("SAP Housing/Acre", fv("sap_planned_hh_per_acre", 2)),
+      kv("ERU/Acre (2027-37)",fv("eru_per_acre",           2))
+    )), ","),
+
+    # Col 3: Centers
+    paste0("  ", inner_tbl("Centers (% of Tract)", c(
+      kv("Metropolitan Ctr", fv("wc_pct_metropolitan_center", 1, "%")),
+      kv("Urban Ctr",        fv("wc_pct_urban_center",        1, "%")),
+      kv("City Ctr",         fv("wc_pct_city_center",         1, "%")),
+      kv("Neighborhood Ctr", fv("wc_pct_neighborhood_center", 1, "%")),
+      kv("Employment Dist.", fv("wc_pct_employment_district", 1, "%")),
+      kv("Industrial Dist.", fv("wc_pct_industrial_district", 1, "%")),
+      kv("Retail Dist.",     fv("wc_pct_retail_district",     1, "%"))
+    )), ","),
+
+    # Col 4: Housing
+    paste0("  ", inner_tbl("Housing", c(
+      kv("Total Units",   fv("units_total",      0)),
+      kv("Res. Acres",    fv("res_acres_total",   1)),
+      kv("SFD Acres",     fv("res_acres_sfd",     1)),
+      kv("MF/SFA Acres",  fv("res_acres_mf_sfa",  1))
+    )), ","),
+
+    # Col 5: Urban Institute
+    paste0("  ", inner_tbl("Urban Institute", c(
+      kv("Poverty Rate",         pvrty_str),
+      kv("Unemp. Rate",          unmpl_str),
+      kv("Median Family Income", mfi_str)
+    ))),
+
+    "),",  # close top grid
+    "#v(0.08in)",
+
+    # ── Bottom row: transit | auto | growth ────────────────────────────────
+    "#grid(columns: (1fr, 1fr, 1fr), gutter: 0.1in,",
+
+    # Transit
+    paste0("  ", inner_tbl("Transit", c(
+      kv("Rail/BRT Stops",      fv("transit_stop_count", 0)),
+      kv("SAP Acres",           fv("sap_acres",          1)),
+      kv("SAP %",               fv("sap_pct",            1, "%")),
+      kv("ATO Jobs (Transit)",  fv("ato_jobtransit",     0)),
+      kv("ATO HHs (Transit)",   fv("ato_hhtransit",      0))
+    )), ","),
+
+    # Auto
+    paste0("  ", inner_tbl("Auto", c(
+      kv("Freeway Exits",   fv("freeway_exit_count", 0)),
+      kv("ATO Jobs (Auto)", fv("ato_jobauto",        0)),
+      kv("ATO HHs (Auto)",  fv("ato_hhauto",         0))
+    )), ","),
+
+    # Growth
+    paste0("  ", inner_tbl("Projected Growth 2027-2037", c(
+      kv("HHs Added",   fv("hh_added",    0)),
+      kv("Pop. Added",  fv("pop_added",   0)),
+      kv("Jobs Added",  fv("jobs_added",  0)),
+      kv("ERU Added",   fv("eru_added",   0)),
+      kv("ERU/Acre",    fv("eru_per_acre",2))
+    ))),
+
+    ")",  # close bottom grid
+    "#v(0.05in)",
+    '#text(size: 6pt, fill: rgb("#888888"))[Sources: Federal OZ 2.0 eligibility, Urban Institute, WFRC/MAG regional data. Growth projections 2027-2037. ATO = Access to Opportunities.]'
+  )
+
+  paste0(lines, collapse = "\n")
+}
+
+# Emit one raw Typst block per tract, separated by page breaks.
+for (i in seq_len(nrow(county_data))) {
+  tract  <- county_data[i, ]
+  geoid  <- as.character(tract$GEOID)
+  typst  <- tract_page(tract, map_paths[[geoid]], i == 1)
+  cat("``` {=typst}\n")
+  cat(typst)
+  cat("\n```\n\n")
+}
+```

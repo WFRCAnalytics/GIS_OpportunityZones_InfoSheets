@@ -932,15 +932,30 @@ report_data <- tract_info |>
 saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
 saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
 
-# Render one Typst PDF per county; county order preserved via factor levels
-dir.create(settings$output_dir, showWarnings = FALSE, recursive = TRUE)
-purrr::walk(levels(droplevels(report_data$county)), function(county_name) {
-  out_file <- paste0(gsub(" ", "_", county_name), "_OZ_Info_Sheet.pdf")
+# Render summary and detail PDFs per county into output/summary/ and output/detail/
+county_names <- levels(droplevels(report_data$county))
+summary_dir  <- file.path(settings$output_dir, "summary")
+detail_dir   <- file.path(settings$output_dir, "detail")
+dir.create(summary_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(detail_dir,  showWarnings = FALSE, recursive = TRUE)
+
+purrr::walk(county_names, function(county_name) {
+  slug <- gsub(" ", "_", county_name)
+
+  summary_file <- paste0(slug, "_OZ_Summary.pdf")
   quarto::quarto_render(
-    input = "_county_report.qmd",
-    output_file = out_file,
+    input          = "_county_summary.qmd",
+    output_file    = summary_file,
     execute_params = list(county = county_name, data_dir = remotes_dir)
   )
-  file.rename(out_file, file.path(settings$output_dir, out_file))
+  file.rename(summary_file, file.path(summary_dir, summary_file))
+
+  detail_file <- paste0(slug, "_OZ_Detail.pdf")
+  quarto::quarto_render(
+    input          = "_county_detail.qmd",
+    output_file    = detail_file,
+    execute_params = list(county = county_name, data_dir = remotes_dir)
+  )
+  file.rename(detail_file, file.path(detail_dir, detail_file))
 })
 ```

@@ -2,6 +2,9 @@
 # Toggle by commenting/uncommenting the line below.
 data/remotes/
 
+# Quarto build cache — regenerated on render, not committed
+.quarto/
+
 # R
 .Rhistory
 .RData
