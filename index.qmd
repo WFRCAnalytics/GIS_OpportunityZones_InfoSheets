@@ -28,6 +28,10 @@ library(stringr)
 library(ggplot2)
 library(knitr)
 
+# Report assembly — install with renv::install(c("quarto", "tinytable"))
+library(quarto)
+library(tinytable)
+
 # Options
 options(tigris_use_cache = FALSE) # caching handled by src/download_data.R
 options(scipen = 999) # suppress scientific notation
@@ -806,14 +810,31 @@ tract_maps[["49035102900"]]
 
 ```{r}
 #| label: report
-# Parameterized report — one rendered document per county, each containing
-# one row per OZ 2.0 candidate tract in that county (sorted by tract ID).
-# Each row: reference map + tract info + housing + transit + auto + growth.
-#
-# Approach: knitr::knit_child() or Quarto parameterized child documents,
-# with county as the parameter. To be designed once data sections are complete.
-#
-# County order:
-#   WFRC: Box Elder, Weber, Davis, Salt Lake, Tooele, Morgan
-#   MAG:  Utah, Summit, Wasatch
+#| eval: false
+
+# Join all data sections into a single master table (one row per tract)
+report_data <- tract_info |>
+  dplyr::left_join(centers_info, by = "GEOID") |>
+  dplyr::left_join(housing_info, by = "GEOID") |>
+  dplyr::left_join(transit_info, by = "GEOID") |>
+  dplyr::left_join(auto_info,    by = "GEOID") |>
+  dplyr::left_join(growth_info,  by = "GEOID") |>
+  dplyr::left_join(ui_info,      by = "GEOID")
+
+# Persist to disk — child documents run in separate R sessions and cannot
+# access the parent environment directly
+saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
+saveRDS(tract_maps,  file.path(remotes_dir, "tract_maps.rds"))
+
+# Render one Typst PDF per county; county order preserved via factor levels
+dir.create(settings$output_dir, showWarnings = FALSE, recursive = TRUE)
+purrr::walk(levels(report_data$county), function(county_name) {
+  out_file <- paste0(gsub(" ", "_", county_name), "_OZ_Info_Sheet.pdf")
+  quarto::quarto_render(
+    input          = "_county_report.qmd",
+    output_file    = out_file,
+    execute_params = list(county = county_name, data_dir = remotes_dir)
+  )
+  file.rename(out_file, file.path(settings$output_dir, out_file))
+})
 ```
