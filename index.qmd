@@ -2,6 +2,10 @@
 title: "OZ 2.0 Candidate Tracts — Land Use & Transportation Info Sheets"
 subtitle: "WFRC & MAG Region"
 format: html
+knitr:
+  opts_chunk:
+    fig.width: 3
+    fig.height: 2
 ---
 
 # Load Libraries
@@ -87,7 +91,8 @@ oz_tracts <- sf::read_sf(
      WHERE oz_lgbl = 'OZ eligible'
        AND STATEFP = '%s'
        AND COUNTYF IN (%s)",
-    state_fips, county_fips_in
+    state_fips,
+    county_fips_in
   )
 ) |>
   sf::st_transform(crs) |>
@@ -296,64 +301,87 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
 # Wasatch Choice center/district type fill colors — centers ordered high to low tier,
 # districts distinguished by hue
 wc_center_colors <- c(
-  "Metropolitan Center" = "#1B4332",
-  "Urban Center" = "#40916C",
-  "City Center" = "#74C69D",
-  "Neighborhood Center" = "#B7E4C7",
-  "Education District" = "#1D3557",
-  "Employment District" = "#6D3D91",
-  "Industrial District" = "#C77B3A",
-  "Retail District" = "#E9B44C",
-  "Special District" = "#8D99AE"
+  "Metropolitan Center" = "#bc5f8c",
+  "Urban Center" = "#ec8369",
+  "City Center" = "#f5b86e",
+  "Neighborhood Center" = "#fae55c",
+  "Education District" = "#cbe3e1",
+  "Employment District" = "#f6c4da",
+  "Industrial District" = "#eadbf4",
+  "Retail District" = "#f8dddf",
+  "Special District" = "#d3d3d3"
 )
+```
 
+```{r}
 make_tract_map <- function(geoid) {
-  focal  <- dplyr::filter(oz_tracts, GEOID == geoid)
+  focal <- dplyr::filter(oz_tracts, GEOID == geoid)
   exp_bb <- .expand_bbox(sf::st_bbox(focal), factor = 1.5)
-  view   <- sf::st_as_sfc(exp_bb)
+  view <- sf::st_as_sfc(exp_bb)
 
   ggplot2::ggplot() +
     # Context: census tract fill
     ggplot2::geom_sf(
       data = sf::st_filter(tracts, view),
-      fill = "#F2F2F2", color = "#D0D0D0", linewidth = 0.15
+      fill = "#F2F2F2",
+      color = "#D0D0D0",
+      linewidth = 0.15
     ) +
     # County boundary for orientation
     ggplot2::geom_sf(
       data = sf::st_filter(counties, view),
-      fill = NA, color = "#909090", linewidth = 0.4
-    ) +
-    # Station Area Plan buffers
-    ggplot2::geom_sf(
-      data = sf::st_filter(sap_buffers, view),
-      fill = "#B8D4EA", color = NA, alpha = 0.6
+      fill = NA,
+      color = "#909090",
+      linewidth = 0.4
     ) +
     # Wasatch Choice centers and districts, filled by type
     ggplot2::geom_sf(
       data = sf::st_filter(wc_centers, view),
-      ggplot2::aes(fill = CenterType), color = NA, alpha = 0.8
+      ggplot2::aes(fill = CenterType),
+      color = NA,
+      alpha = 0.8
     ) +
     ggplot2::scale_fill_manual(
-      values = wc_center_colors, name = NULL,
-      na.value = "#CCCCCC", drop = TRUE
+      values = wc_center_colors,
+      name = NULL,
+      na.value = "#CCCCCC",
+      drop = TRUE
+    ) +
+    # Station Area Plan buffers
+    ggplot2::geom_sf(
+      data = sf::st_filter(sap_buffers, view),
+      fill = "#B8D4EA",
+      color = NA,
+      alpha = 0.6
     ) +
     # UTA Rail / BRT stops
     ggplot2::geom_sf(
-      data   = sf::st_filter(uta_stops, view),
-      shape  = 21, fill = "#D62828", color = "white", size = 1.8, stroke = 0.4
+      data = sf::st_filter(uta_stops, view),
+      shape = 21,
+      fill = "#D62828",
+      color = "white",
+      size = 1.8,
+      stroke = 0.4
     ) +
     # Target tract — bold outline, no fill
-    ggplot2::geom_sf(data = focal, fill = NA, color = "#1A1A1A", linewidth = 1.0) +
+    ggplot2::geom_sf(
+      data = focal,
+      fill = NA,
+      color = "#1A1A1A",
+      linewidth = 1.25
+    ) +
     ggplot2::coord_sf(
-      xlim        = c(exp_bb["xmin"], exp_bb["xmax"]),
-      ylim        = c(exp_bb["ymin"], exp_bb["ymax"]),
+      xlim = c(exp_bb["xmin"], exp_bb["xmax"]),
+      ylim = c(exp_bb["ymin"], exp_bb["ymax"]),
+      crs = sf::st_crs(crs),
       default_crs = sf::st_crs(crs),
-      expand      = FALSE
+      datum = sf::st_crs(crs),
+      expand = FALSE
     ) +
     ggplot2::theme_void() +
     ggplot2::theme(
       legend.position = "none",
-      plot.margin     = ggplot2::margin(2, 2, 2, 2)
+      plot.margin = ggplot2::margin(2, 2, 2, 2)
     )
 }
 
@@ -364,13 +392,9 @@ tract_maps <- purrr::set_names(
 ```
 
 ```{r}
+#| fig-width: 3
+#| fig-height: 2
 tract_maps[["49035102900"]]
-```
-
-```{r}
-#| label: map-test
-ggplot2::ggplot() +
-  ggplot2::geom_sf(data = tracts)
 ```
 
 # Assemble Report
