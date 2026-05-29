@@ -104,6 +104,16 @@ oz_tracts <- sf::read_sf(
     )
   )
 
+# Urban Institute layer — attributes only; filtered to candidate tract GEOIDs
+oz_ui <- sf::read_sf(
+  cache_paths$oz_ui_analysis,
+  query = sprintf(
+    "SELECT * FROM oz_ui_analysis WHERE GEOID20 IN (%s)",
+    paste0("'", oz_tracts$GEOID, "'", collapse = ", ")
+  )
+) |>
+  sf::st_drop_geometry()
+
 counties <- sf::read_sf(
   cache_paths$counties,
   query = sprintf(
@@ -601,6 +611,25 @@ growth_info <- oz_tracts |>
   dplyr::left_join(pop_growth_df, by = "GEOID") |>
   dplyr::left_join(job_growth_df, by = "GEOID") |>
   dplyr::mutate(dplyr::across(where(is.numeric), ~dplyr::coalesce(.x, 0L)))
+```
+
+## Urban Institute
+
+```{r}
+#| label: urban-institute
+
+# Socioeconomic indicators from oz_eligible_tracts (pvrty_r, unmpl_r, mfi) joined
+# with oztoolclassification from the Urban Institute layer.
+# Inspect names(oz_ui) to see all additional fields available from that layer.
+ui_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID, pvrty_r, unmpl_r, mfi) |>
+  dplyr::left_join(
+    oz_ui |>
+      dplyr::select(GEOID20, oztoolclassification) |>
+      dplyr::rename(GEOID = GEOID20),
+    by = "GEOID"
+  )
 ```
 
 # Prepare Maps
