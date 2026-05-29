@@ -460,10 +460,66 @@ transit_info <- oz_tracts |>
 
 ```{r}
 #| label: auto
-# 1. Freeway exits: count within each tract.
-#    When none present, compute distance to nearest from tract edge and centroid.
-# 2. ATO auto scores (JOBAUTO_23, HHAUTO_23): weighted avg by DEVACRES
-#    across TAZs intersecting each tract.
+
+# ---- Freeway interchanges within each tract ----
+interchanges_within <- sf::st_join(
+  dplyr::select(oz_tracts, GEOID),
+  dplyr::select(freeway_exits, xid),
+  join = sf::st_contains
+) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(!is.na(xid)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(freeway_exit_count = dplyr::n(), .groups = "drop")
+
+# Distance to nearest interchange — cleared for tracts that already have one
+nearest_exit_idx <- sf::st_nearest_feature(oz_tracts, freeway_exits)
+exit_dist_df <- data.frame(
+  GEOID                = oz_tracts$GEOID,
+  exit_dist_edge_mi    = as.numeric(sf::st_distance(
+    oz_tracts,
+    freeway_exits[nearest_exit_idx, ],
+    by_element = TRUE
+  )) * 0.000621371,
+  exit_dist_centroid_mi = as.numeric(sf::st_distance(
+    suppressWarnings(sf::st_centroid(oz_tracts)),
+    freeway_exits[nearest_exit_idx, ],
+    by_element = TRUE
+  )) * 0.000621371
+)
+
+# ---- ATO auto scores — weighted avg by proportioned DEVACRES ----
+# Reuses ato_areas_df (TAZ total areas) computed in tract-info chunk
+ato_auto_df <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(ato, TAZID, DEVACRES, JOBAUTO_23, HHAUTO_23)
+  )
+) |>
+  dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(int_area > 0) |>
+  dplyr::left_join(ato_areas_df, by = "TAZID") |>
+  dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(
+    ato_jobauto = sum(JOBAUTO_23 * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    ato_hhauto  = sum(HHAUTO_23  * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# ---- Assemble ----
+auto_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(interchanges_within, by = "GEOID") |>
+  dplyr::mutate(freeway_exit_count = dplyr::coalesce(freeway_exit_count, 0L)) |>
+  dplyr::left_join(exit_dist_df, by = "GEOID") |>
+  dplyr::mutate(
+    exit_dist_edge_mi     = dplyr::if_else(freeway_exit_count > 0, NA_real_, exit_dist_edge_mi),
+    exit_dist_centroid_mi = dplyr::if_else(freeway_exit_count > 0, NA_real_, exit_dist_centroid_mi)
+  ) |>
+  dplyr::left_join(ato_auto_df, by = "GEOID")
 ```
 
 ## Projected Growth
