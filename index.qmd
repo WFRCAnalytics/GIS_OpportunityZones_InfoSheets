@@ -38,12 +38,12 @@ options(scipen = 999) # suppress scientific notation
 ```{r}
 #| label: load-data
 source("src/download_data.R")
-config   <- load_config()
+config <- load_config()
 settings <- load_settings()
 
-crs           <- settings$crs_analysis
-remotes_dir   <- config$data_dir_remotes
-map_width_in  <- settings$map_width_in
+crs <- settings$crs_analysis
+remotes_dir <- config$data_dir_remotes
+map_width_in <- settings$map_width_in
 map_height_in <- settings$map_height_in
 knitr::opts_chunk$set(fig.width = map_width_in, fig.height = map_height_in)
 
@@ -291,8 +291,10 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
   cy <- (bbox["ymin"] + bbox["ymax"]) / 2
   hw <- (bbox["xmax"] - bbox["xmin"]) / 2 * factor
   hh <- (bbox["ymax"] - bbox["ymin"]) / 2 * factor
-  bbox["xmin"] <- cx - hw; bbox["xmax"] <- cx + hw
-  bbox["ymin"] <- cy - hh; bbox["ymax"] <- cy + hh
+  bbox["xmin"] <- cx - hw
+  bbox["xmax"] <- cx + hw
+  bbox["ymin"] <- cy - hh
+  bbox["ymax"] <- cy + hh
   bbox
 }
 
@@ -306,10 +308,12 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
   cy <- (bbox["ymin"] + bbox["ymax"]) / 2
   if ((bw / bh) > target) {
     half <- bw / target / 2
-    bbox["ymin"] <- cy - half; bbox["ymax"] <- cy + half
+    bbox["ymin"] <- cy - half
+    bbox["ymax"] <- cy + half
   } else {
     half <- bh * target / 2
-    bbox["xmin"] <- cx - half; bbox["xmax"] <- cx + half
+    bbox["xmin"] <- cx - half
+    bbox["xmax"] <- cx + half
   }
   bbox
 }
@@ -317,71 +321,117 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
 # Wasatch Choice center/district type fill colors — kept as-is per spec
 wc_center_colors <- c(
   "Metropolitan Center" = "#bc5f8c",
-  "Urban Center"        = "#ec8369",
-  "City Center"         = "#f5b86e",
+  "Urban Center" = "#ec8369",
+  "City Center" = "#f5b86e",
   "Neighborhood Center" = "#fae55c",
-  "Education District"  = "#cbe3e1",
+  "Education District" = "#cbe3e1",
   "Employment District" = "#f6c4da",
   "Industrial District" = "#eadbf4",
-  "Retail District"     = "#f8dddf",
-  "Special District"    = "#d3d3d3"
+  "Retail District" = "#f8dddf",
+  "Special District" = "#d3d3d3"
 )
 
+# Warm parchment — map canvas and plot background
+map_bg <- "#F7F4EF"
+
 make_tract_map <- function(geoid) {
-  focal  <- dplyr::filter(oz_tracts, GEOID == geoid)
+  focal <- dplyr::filter(oz_tracts, GEOID == geoid)
+  other_oz <- dplyr::filter(oz_tracts, GEOID != geoid)
   exp_bb <- .enforce_aspect(
     .expand_bbox(sf::st_bbox(focal), factor = 1.5),
-    map_width_in, map_height_in
+    map_width_in,
+    map_height_in
   )
   view <- sf::st_set_crs(sf::st_as_sfc(exp_bb), sf::st_crs(crs))
 
   ggplot2::ggplot() +
-    # Background: census tracts (light, recessive)
+    # 1. Background census tracts — warm light gray, very recessive
     ggplot2::geom_sf(
-      data      = sf::st_filter(tracts, view),
-      fill      = "#F0F0F0", color = "#DEDEDE", linewidth = 0.1
+      data = sf::st_filter(tracts, view),
+      fill = "#EDE8E1",
+      color = "#D8D2C8",
+      linewidth = 0.1
     ) +
-    # SAP buffers (drawn before WC centers so centers overlap cleanly)
+    # 2. OZ 1.0 tracts — warm rose-gray underlay shows prior designation
     ggplot2::geom_sf(
-      data  = sf::st_filter(sap_buffers, view),
-      fill  = "#D6E8F5", color = NA, alpha = 0.55
+      data = sf::st_filter(oz_1, view),
+      fill = "#D4C8C4",
+      color = NA,
+      alpha = 0.5
     ) +
-    # Wasatch Choice centers and districts — colors unchanged
+    # 3. Wasatch Choice centers and districts
     ggplot2::geom_sf(
-      data  = sf::st_filter(wc_centers, view),
-      ggplot2::aes(fill = CenterType), color = NA, alpha = 0.8
+      data = sf::st_filter(wc_centers, view),
+      ggplot2::aes(fill = CenterType),
+      color = NA,
+      alpha = 0.75
     ) +
     ggplot2::scale_fill_manual(
-      values = wc_center_colors, name = NULL, na.value = "#CCCCCC", drop = TRUE
+      values = wc_center_colors,
+      name = NULL,
+      na.value = "#C8C0C0",
+      drop = TRUE
     ) +
-    # County boundary (orientation anchor — drawn over fill layers)
+    # 4. Other OZ 2.0 candidate tracts — pale straw with amber border
     ggplot2::geom_sf(
-      data      = sf::st_filter(counties, view),
-      fill      = NA, color = "#888888", linewidth = 0.5, linetype = "solid"
+      data = sf::st_filter(other_oz, view),
+      fill = "#F2E8C4",
+      color = "#C4A43A",
+      linewidth = 0.25,
+      alpha = 0.5
     ) +
-    # UTA Rail / BRT stops
+    # 5. SAP buffers — cool blue over warm palette; temperature contrast reads clearly
     ggplot2::geom_sf(
-      data   = sf::st_filter(uta_stops, view),
-      shape  = 21, fill = "#C0392B", color = "white", size = 2, stroke = 0.45
+      data = sf::st_filter(sap_buffers, view),
+      fill = "#B8D4E8",
+      color = "#6FA4C4",
+      linewidth = 0.25,
+      alpha = 0.45
     ) +
-    # Target tract — highlighted fill + bold border
+    # 6. County boundary — thin charcoal, crisp orientation anchor
     ggplot2::geom_sf(
-      data      = focal,
-      fill      = "#FFFBE6", color = "#1A1A1A", linewidth = 1.1
+      data = sf::st_filter(counties, view),
+      fill = NA,
+      color = "#5A5A5A",
+      linewidth = 0.35
+    ) +
+    # 7. Freeway interchanges — solid dark-slate triangle; no white halo at this size
+    ggplot2::geom_sf(
+      data = sf::st_filter(freeway_exits, view),
+      shape = 17,
+      color = "#3A4A5A",
+      size = 2.0
+    ) +
+    # 8. UTA Rail / BRT stops — deep burgundy; white stroke separates from dark fills
+    ggplot2::geom_sf(
+      data = sf::st_filter(uta_stops, view),
+      shape = 21,
+      fill = "#943030",
+      color = "white",
+      size = 2.6,
+      stroke = 0.4
+    ) +
+    # 9. Focal tract — opaque charcoal border; fill alpha via scales::alpha() so
+    #    only the fill is translucent, leaving the stroke at full opacity
+    ggplot2::geom_sf(
+      data = focal,
+      fill = scales::alpha("#FFFFF0", 0.25),
+      color = "#1A1A1A",
+      linewidth = 1.2
     ) +
     ggplot2::coord_sf(
-      xlim        = c(exp_bb["xmin"], exp_bb["xmax"]),
-      ylim        = c(exp_bb["ymin"], exp_bb["ymax"]),
-      crs         = sf::st_crs(crs),
+      xlim = c(exp_bb["xmin"], exp_bb["xmax"]),
+      ylim = c(exp_bb["ymin"], exp_bb["ymax"]),
+      crs = sf::st_crs(crs),
       default_crs = sf::st_crs(crs),
-      datum       = sf::st_crs(crs),
-      expand      = FALSE
+      datum = sf::st_crs(crs),
+      expand = FALSE
     ) +
     ggplot2::theme_void() +
     ggplot2::theme(
-      legend.position  = "none",
-      plot.background  = ggplot2::element_rect(fill = "white", color = NA),
-      plot.margin      = ggplot2::margin(0, 0, 0, 0)
+      legend.position = "none",
+      plot.background = ggplot2::element_rect(fill = map_bg, color = NA),
+      plot.margin = ggplot2::margin(0, 0, 0, 0)
     )
 }
 
