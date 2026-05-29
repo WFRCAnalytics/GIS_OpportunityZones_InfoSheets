@@ -526,9 +526,43 @@ auto_info <- oz_tracts |>
 
 ```{r}
 #| label: growth
-# HH and job growth from ATO layer (HH_23 → HH_32, JOB_23 → JOB_32).
-# Area-proportioning where TAZ boundaries cross tract boundaries.
-# Note: no population growth field in ATO layer — source TBD.
+
+# Helper: area-proportion (YEAR2037 - YEAR2027) from a TAZ projection layer
+# onto oz_tracts. Uses plain area proportioning — no DEVACRES in these layers.
+.proportion_growth <- function(taz_layer, value_col) {
+  taz_areas <- data.frame(
+    TAZID    = taz_layer$TAZID,
+    taz_area = as.numeric(sf::st_area(taz_layer))
+  )
+  suppressWarnings(
+    sf::st_intersection(
+      dplyr::select(oz_tracts, GEOID),
+      dplyr::select(taz_layer, TAZID, YEAR2027, YEAR2037)
+    )
+  ) |>
+    dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
+    sf::st_drop_geometry() |>
+    dplyr::filter(int_area > 0) |>
+    dplyr::left_join(taz_areas, by = "TAZID") |>
+    dplyr::mutate(contrib = (YEAR2037 - YEAR2027) * (int_area / taz_area)) |>
+    dplyr::group_by(GEOID) |>
+    dplyr::summarise(
+      !!value_col := round(sum(contrib, na.rm = TRUE)),
+      .groups = "drop"
+    )
+}
+
+hh_growth_df  <- .proportion_growth(taz_hh_projections,  "hh_added")
+pop_growth_df <- .proportion_growth(taz_pop_projections, "pop_added")
+job_growth_df <- .proportion_growth(taz_job_projections, "jobs_added")
+
+growth_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(hh_growth_df,  by = "GEOID") |>
+  dplyr::left_join(pop_growth_df, by = "GEOID") |>
+  dplyr::left_join(job_growth_df, by = "GEOID") |>
+  dplyr::mutate(dplyr::across(where(is.numeric), ~dplyr::coalesce(.x, 0L)))
 ```
 
 # Prepare Maps
