@@ -366,12 +366,94 @@ housing_info <- oz_tracts |>
 
 ```{r}
 #| label: transit
-# 1. Filter UTA stops to Rail and BRT; count within each tract.
-#    When none present, compute distance to nearest from tract edge and centroid.
-# 2. SAP buffer intersect: acres and % of tract covered.
-# 3. ATO transit scores (JOBTRANSIT_23, HHTRANSIT_23): weighted avg by DEVACRES
-#    across TAZs intersecting each tract.
-# 4. Flag planned Phase 1 stations for each tract.
+
+# ---- UTA Rail / BRT stops within each tract ----
+# uta_stops is already filtered to TRAX, FrontRunner, BRT at read time
+stops_within <- sf::st_join(
+  dplyr::select(oz_tracts, GEOID),
+  dplyr::select(uta_stops, stopname),
+  join = sf::st_contains
+) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(!is.na(stopname)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(
+    transit_stop_count = dplyr::n(),
+    transit_stop_names = paste(sort(unique(stopname)), collapse = "; "),
+    .groups = "drop"
+  )
+
+# Distance to nearest stop — computed for all tracts via spatial index;
+# set to NA for tracts that already have stops within
+nearest_stop_idx <- sf::st_nearest_feature(oz_tracts, uta_stops)
+transit_dist_df <- data.frame(
+  GEOID            = oz_tracts$GEOID,
+  dist_edge_mi     = as.numeric(sf::st_distance(
+    oz_tracts,
+    uta_stops[nearest_stop_idx, ],
+    by_element = TRUE
+  )) * 0.000621371,
+  dist_centroid_mi = as.numeric(sf::st_distance(
+    suppressWarnings(sf::st_centroid(oz_tracts)),
+    uta_stops[nearest_stop_idx, ],
+    by_element = TRUE
+  )) * 0.000621371
+)
+
+# ---- SAP buffer intersection — acres and % of tract ----
+sap_overlap <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(sap_buffers, OBJECTID)
+  )
+) |>
+  dplyr::mutate(sap_m2 = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(sap_m2 > 0) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(sap_acres = sum(sap_m2) / 4046.8564, .groups = "drop")
+
+# ---- ATO transit scores — weighted avg by proportioned DEVACRES ----
+# Reuses ato_areas_df (TAZ total areas) computed in tract-info chunk
+ato_transit_df <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(ato, TAZID, DEVACRES, JOBTRANSIT_23, HHTRANSIT_23)
+  )
+) |>
+  dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(int_area > 0) |>
+  dplyr::left_join(ato_areas_df, by = "TAZID") |>
+  dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(
+    ato_jobtransit = sum(JOBTRANSIT_23 * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    ato_hhtransit  = sum(HHTRANSIT_23  * weight, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# ---- Assemble ----
+# Note: planned Phase 1 station flags are manual annotations (no layer available);
+# leave as a join target for later when that data is provided.
+transit_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(stops_within,   by = "GEOID") |>
+  dplyr::mutate(transit_stop_count = dplyr::coalesce(transit_stop_count, 0L)) |>
+  dplyr::left_join(transit_dist_df, by = "GEOID") |>
+  dplyr::mutate(
+    dist_edge_mi     = dplyr::if_else(transit_stop_count > 0, NA_real_, dist_edge_mi),
+    dist_centroid_mi = dplyr::if_else(transit_stop_count > 0, NA_real_, dist_centroid_mi)
+  ) |>
+  dplyr::left_join(sap_overlap, by = "GEOID") |>
+  dplyr::left_join(dplyr::select(total_acres_df, GEOID, total_acres), by = "GEOID") |>
+  dplyr::mutate(
+    sap_acres = dplyr::coalesce(sap_acres, 0),
+    sap_pct   = round(sap_acres / total_acres * 100, 1)
+  ) |>
+  dplyr::select(-total_acres) |>
+  dplyr::left_join(ato_transit_df, by = "GEOID")
 ```
 
 ## Auto
