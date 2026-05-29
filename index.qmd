@@ -1,0 +1,390 @@
+---
+title: "OZ 2.0 Candidate Tracts — Land Use & Transportation Info Sheets"
+subtitle: "WFRC & MAG Region"
+format: html
+---
+
+# Load Libraries
+
+```{r}
+#| label: libraries
+#| include: false
+# Data access
+library(yaml)
+library(arcgislayers)
+library(tigris)
+library(tidycensus)
+
+# Spatial
+library(sf)
+
+# Data wrangling
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(stringr)
+
+# Mapping and output
+library(ggplot2)
+library(knitr)
+
+# Options
+options(tigris_use_cache = FALSE) # caching handled by src/download_data.R
+options(scipen = 999) # suppress scientific notation
+```
+
+# Prepare and Load Data
+
+```{r}
+#| label: load-data
+source("src/download_data.R")
+config <- load_config()
+
+crs <- config$settings$crs_analysis
+remotes_dir <- config$settings$data_dir_remotes
+
+# County names in report order — WFRC region first, then MAG
+county_order <- c(
+  "Box Elder",
+  "Weber",
+  "Davis",
+  "Salt Lake",
+  "Tooele",
+  "Morgan", # WFRC
+  "Utah",
+  "Summit",
+  "Wasatch" # MAG
+)
+
+# Resolve FIPS codes dynamically via tidycensus internals
+state_fips <- tidycensus:::validate_state(state = config$settings$state)
+county_fips <- vapply(
+  county_order,
+  function(x) {
+    tidycensus:::validate_county(state = config$settings$state, county = x)
+  },
+  character(1)
+)
+# county_fips: named vector — names = county names, values = 3-digit FIPS
+# county_geoids: 5-digit state+county FIPS prefix used for ACS GEOID filtering
+county_geoids <- paste0(state_fips, county_fips)
+
+# Ensure all layers are cached; returns named list of file paths
+cache_paths <- download_all(config)
+
+# Shared SQL IN clause for county FIPS filtering
+county_fips_in <- paste0("'", county_fips, "'", collapse = ", ")
+
+# TAZ projection layers use integer CO_FIPS (standard 3-digit FIPS as integer: '035' -> 35)
+co_fips_int_in <- paste(as.integer(county_fips), collapse = ", ")
+
+# --- Read spatial layers via sf::read_sf() with query/wkt_filter where applicable ---
+
+oz_tracts <- sf::read_sf(
+  cache_paths$oz_eligible_tracts,
+  query = sprintf(
+    "SELECT * FROM oz_eligible_tracts
+     WHERE oz_lgbl = 'OZ eligible'
+       AND STATEFP = '%s'
+       AND COUNTYF IN (%s)",
+    state_fips, county_fips_in
+  )
+) |>
+  sf::st_transform(crs) |>
+  dplyr::mutate(
+    county = factor(
+      names(county_fips)[match(COUNTYF, county_fips)],
+      levels = county_order
+    )
+  )
+
+counties <- sf::read_sf(
+  cache_paths$counties,
+  query = sprintf(
+    "SELECT COUNTYFP, NAME, geom FROM counties WHERE COUNTYFP IN (%s)",
+    county_fips_in
+  )
+) |>
+  sf::st_transform(crs)
+
+tracts <- sf::read_sf(
+  cache_paths$tracts,
+  query = sprintf(
+    "SELECT GEOID, COUNTYFP, geom FROM tracts WHERE COUNTYFP IN (%s)",
+    county_fips_in
+  )
+) |>
+  sf::st_transform(crs)
+
+# Places: no COUNTYFP field — combine spatial filter (oz_tracts bbox in WGS84)
+# with column selection. wkt_filter applies before query in OGR.
+oz_bbox_wgs84 <- oz_tracts |>
+  sf::st_transform(4326) |>
+  sf::st_bbox() |>
+  sf::st_as_sfc() |>
+  sf::st_as_text()
+
+places <- sf::read_sf(
+  cache_paths$places,
+  query = "SELECT NAME, geom FROM places",
+  wkt_filter = oz_bbox_wgs84
+) |>
+  sf::st_transform(crs)
+
+# Geometry only — OBJECTID retained as feature ID
+oz_1 <- sf::read_sf(
+  cache_paths$oz_1_tracts,
+  query = "SELECT OBJECTID, geom FROM oz_1_tracts"
+) |>
+  sf::st_transform(crs)
+
+# CenterName included for optional tract labelling
+wc_centers <- sf::read_sf(
+  cache_paths$wasatch_choice_centers,
+  query = "SELECT OBJECTID, CenterName, CenterType, geom FROM wasatch_choice_centers"
+) |>
+  sf::st_transform(crs)
+
+# mode is a comma-separated string (e.g. "Bus, BRT") — use LIKE for each target mode
+uta_stops <- sf::read_sf(
+  cache_paths$uta_stops,
+  query = "SELECT stopabbr, stopname, geom FROM uta_stops
+           WHERE mode LIKE '%TRAX%'
+              OR mode LIKE '%FrontRunner%'
+              OR mode LIKE '%BRT%'"
+) |>
+  sf::st_transform(crs)
+
+# Geometry only — OBJECTID retained as feature ID
+sap_buffers <- sf::read_sf(
+  cache_paths$sap_buffers,
+  query = "SELECT OBJECTID, geom FROM sap_buffers"
+) |>
+  sf::st_transform(crs)
+
+# Geometry only — xid is the OID field for this layer
+freeway_exits <- sf::read_sf(
+  cache_paths$freeway_interchanges,
+  query = "SELECT xid, geom FROM freeway_interchanges"
+) |>
+  sf::st_transform(crs)
+
+# TYPE / SUBTYPE classify unit type (SFD, MF, etc.); UNIT_COUNT and ACRES drive metrics
+housing_inv <- sf::read_sf(
+  cache_paths$housing_inventory,
+  query = "SELECT OBJECTID, TYPE, SUBTYPE, UNIT_COUNT, ACRES, geom FROM housing_inventory"
+) |>
+  sf::st_transform(crs)
+
+ato <- sf::read_sf(
+  cache_paths$ato,
+  query = sprintf(
+    "SELECT TAZID, CO_FIPS, DEVACRES,
+            JOBAUTO_23, HHAUTO_23, JOBTRANSIT_23, HHTRANSIT_23, geom
+     FROM ato WHERE CO_FIPS IN (%s)",
+    co_fips_int_in
+  )
+) |>
+  sf::st_transform(crs)
+
+taz_hh_projections <- sf::read_sf(
+  cache_paths$taz_hh_projections,
+  query = sprintf(
+    "SELECT TAZID, YEAR2027, YEAR2037, geom FROM taz_hh_projections WHERE CO_FIPS IN (%s)",
+    co_fips_int_in
+  )
+) |>
+  sf::st_transform(crs)
+
+taz_job_projections <- sf::read_sf(
+  cache_paths$taz_job_projections,
+  query = sprintf(
+    "SELECT TAZID, YEAR2027, YEAR2037, geom FROM taz_job_projections WHERE CO_FIPS IN (%s)",
+    co_fips_int_in
+  )
+) |>
+  sf::st_transform(crs)
+
+taz_pop_projections <- sf::read_sf(
+  cache_paths$taz_pop_projections,
+  query = sprintf(
+    "SELECT TAZID, YEAR2027, YEAR2037, geom FROM taz_pop_projections WHERE CO_FIPS IN (%s)",
+    co_fips_int_in
+  )
+) |>
+  sf::st_transform(crs)
+
+# --- ACS: non-spatial, read from RDS; pivot to one row per tract ---
+
+acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
+  dplyr::filter(stringr::str_sub(GEOID, 1, 5) %in% county_geoids) |>
+  dplyr::select(GEOID, variable, estimate) |>
+  tidyr::pivot_wider(names_from = variable, values_from = estimate)
+```
+
+# Tract Info
+
+```{r}
+#| label: tract-info
+# Build the base tract table: one row per OZ 2.0 candidate tract.
+# oz_eligible_tracts is the primary source — it already contains:
+#   pop_2024, oztoolclassification, and Urban Institute socioeconomic indicators.
+# Join in: population (ACS B01003_001) and HH count (ACS B11001_001) — sourced
+#   directly from Census rather than UI layer's pop_2024; total acres (computed from geometry),
+#   OZ 1.0 overlap (acres, %), developable acres (area-proportioned from ATO TAZ),
+#   Wasatch Choice center intersections (acres and % by type: Metro, Urban, City, Neighborhood).
+# Key join field: GEOID20. Filter to WFRC/MAG counties before any joins.
+```
+
+## Housing
+
+```{r}
+#| label: housing
+# Join Jan 1 2025 Housing Unit Inventory to each tract.
+# Columns: current housing unit count by type,
+# residential acres (total, SFD, MF/SFA).
+```
+
+## Transit
+
+```{r}
+#| label: transit
+# 1. Filter UTA stops to Rail and BRT; count within each tract.
+#    When none present, compute distance to nearest from tract edge and centroid.
+# 2. SAP buffer intersect: acres and % of tract covered.
+# 3. ATO transit scores (JOBTRANSIT_23, HHTRANSIT_23): weighted avg by DEVACRES
+#    across TAZs intersecting each tract.
+# 4. Flag planned Phase 1 stations for each tract.
+```
+
+## Auto
+
+```{r}
+#| label: auto
+# 1. Freeway exits: count within each tract.
+#    When none present, compute distance to nearest from tract edge and centroid.
+# 2. ATO auto scores (JOBAUTO_23, HHAUTO_23): weighted avg by DEVACRES
+#    across TAZs intersecting each tract.
+```
+
+## Projected Growth
+
+```{r}
+#| label: growth
+# HH and job growth from ATO layer (HH_23 → HH_32, JOB_23 → JOB_32).
+# Area-proportioning where TAZ boundaries cross tract boundaries.
+# Note: no population growth field in ATO layer — source TBD.
+```
+
+# Prepare Maps
+
+```{r}
+#| label: maps
+# Expand a bbox by a scale factor from its center, preserving CRS
+.expand_bbox <- function(bbox, factor) {
+  cx <- (bbox["xmin"] + bbox["xmax"]) / 2
+  cy <- (bbox["ymin"] + bbox["ymax"]) / 2
+  hw <- (bbox["xmax"] - bbox["xmin"]) / 2 * factor
+  hh <- (bbox["ymax"] - bbox["ymin"]) / 2 * factor
+  bbox["xmin"] <- cx - hw
+  bbox["ymin"] <- cy - hh
+  bbox["xmax"] <- cx + hw
+  bbox["ymax"] <- cy + hh
+  bbox
+}
+
+# Wasatch Choice center/district type fill colors — centers ordered high to low tier,
+# districts distinguished by hue
+wc_center_colors <- c(
+  "Metropolitan Center" = "#1B4332",
+  "Urban Center" = "#40916C",
+  "City Center" = "#74C69D",
+  "Neighborhood Center" = "#B7E4C7",
+  "Education District" = "#1D3557",
+  "Employment District" = "#6D3D91",
+  "Industrial District" = "#C77B3A",
+  "Retail District" = "#E9B44C",
+  "Special District" = "#8D99AE"
+)
+
+make_tract_map <- function(geoid) {
+  focal  <- dplyr::filter(oz_tracts, GEOID == geoid)
+  exp_bb <- .expand_bbox(sf::st_bbox(focal), factor = 1.5)
+  view   <- sf::st_as_sfc(exp_bb)
+
+  ggplot2::ggplot() +
+    # Context: census tract fill
+    ggplot2::geom_sf(
+      data = sf::st_filter(tracts, view),
+      fill = "#F2F2F2", color = "#D0D0D0", linewidth = 0.15
+    ) +
+    # County boundary for orientation
+    ggplot2::geom_sf(
+      data = sf::st_filter(counties, view),
+      fill = NA, color = "#909090", linewidth = 0.4
+    ) +
+    # Station Area Plan buffers
+    ggplot2::geom_sf(
+      data = sf::st_filter(sap_buffers, view),
+      fill = "#B8D4EA", color = NA, alpha = 0.6
+    ) +
+    # Wasatch Choice centers and districts, filled by type
+    ggplot2::geom_sf(
+      data = sf::st_filter(wc_centers, view),
+      ggplot2::aes(fill = CenterType), color = NA, alpha = 0.8
+    ) +
+    ggplot2::scale_fill_manual(
+      values = wc_center_colors, name = NULL,
+      na.value = "#CCCCCC", drop = TRUE
+    ) +
+    # UTA Rail / BRT stops
+    ggplot2::geom_sf(
+      data   = sf::st_filter(uta_stops, view),
+      shape  = 21, fill = "#D62828", color = "white", size = 1.8, stroke = 0.4
+    ) +
+    # Target tract — bold outline, no fill
+    ggplot2::geom_sf(data = focal, fill = NA, color = "#1A1A1A", linewidth = 1.0) +
+    ggplot2::coord_sf(
+      xlim        = c(exp_bb["xmin"], exp_bb["xmax"]),
+      ylim        = c(exp_bb["ymin"], exp_bb["ymax"]),
+      default_crs = sf::st_crs(crs),
+      expand      = FALSE
+    ) +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      legend.position = "none",
+      plot.margin     = ggplot2::margin(2, 2, 2, 2)
+    )
+}
+
+tract_maps <- purrr::set_names(
+  purrr::map(oz_tracts$GEOID, make_tract_map),
+  oz_tracts$GEOID
+)
+```
+
+```{r}
+tract_maps[["49035102900"]]
+```
+
+```{r}
+#| label: map-test
+ggplot2::ggplot() +
+  ggplot2::geom_sf(data = tracts)
+```
+
+# Assemble Report
+
+```{r}
+#| label: report
+# Parameterized report — one rendered document per county, each containing
+# one row per OZ 2.0 candidate tract in that county (sorted by tract ID).
+# Each row: reference map + tract info + housing + transit + auto + growth.
+#
+# Approach: knitr::knit_child() or Quarto parameterized child documents,
+# with county as the parameter. To be designed once data sections are complete.
+#
+# County order:
+#   WFRC: Box Elder, Weber, Davis, Salt Lake, Tooele, Morgan
+#   MAG:  Utah, Summit, Wasatch
+```

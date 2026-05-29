@@ -1,0 +1,138 @@
+# Data source configuration for OZ Info Sheets
+
+# ---------------------------------------------------------------------------
+# Project-wide settings
+# ---------------------------------------------------------------------------
+settings:
+  state: "UT"
+  state_fips: "49"
+  crs_analysis: 26912 # NAD83 / UTM Zone 12N — meters, correct for Utah area calculations
+  output_dir: "output"
+  data_dir_raw: "data/raw" # raw source files — preserved and committed
+  data_dir_remotes: "data/remotes" # replicable downloads — gitignored when files exceed GitHub size limits
+
+# ---------------------------------------------------------------------------
+# ArcGIS Feature Service layers  (arcgislayers package)
+# ---------------------------------------------------------------------------
+arcgis_layers:
+  oz_eligible_tracts:
+    url: "https://services6.arcgis.com/BAJNi3EgCdtQ1BCG/ArcGIS/rest/services/Federal_Opportunity_Zones_2_Eligibility_Estimate/FeatureServer/0"
+    description: >
+      National federal OZ 2.0 eligibility estimates (full dataset, all states).
+      Full dataset is downloaded and cached. Filter at read time:
+        oz_lgbl = 'OZ eligible'  (OZ candidate tracts only)
+        STATEFP                  (2-digit state FIPS string, e.g. '49')
+        COUNTYF                  (3-digit county FIPS string, e.g. '035')
+      Key fields: GEOID (11-digit census tract ID — join to oz_ui_analysis.GEOID20),
+        COUNTYF (county FIPS), popultn, pvrty_r, unmpl_r, mfi.
+    force_download: false
+
+  oz_ui_analysis:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/arcgis/rest/services/UI_OpportunityZones_2_0/FeatureServer/0"
+    description: >
+      Urban Institute OZ 2.0 analysis layer. Join to oz_eligible_tracts on GEOID20.
+      Key field — oztoolclassification (investment likelihood), three values:
+        "Less likely to attract OZ investment"
+        "Likely to attract capital even without OZ designation"
+        "More likely to attract OZ investment, with larger impact"
+      Also contains socioeconomic indicators (unemployment rate, poverty rate, etc.)
+      useful for the Urban Institute analysis column in the report.
+      Filter at read time by matching GEOIDs from oz_eligible_tracts (Utah only).
+    force_download: false
+
+  oz_1_tracts:
+    url: "https://services3.arcgis.com/GlpLTbxq481k9lgs/ArcGIS/rest/services/omidgley_OZ_Map_layers/FeatureServer/8"
+    description: "Final designated OZ 1.0 tracts — intersect with OZ 2.0 tracts to compute overlap acres and %"
+    force_download: false
+
+  wasatch_choice_centers:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/WCV_Centers_and_Regional_Land_Uses/FeatureServer/0"
+    description: "Wasatch Choice 2050 centers polygons (Metro, Urban, City, Neighborhood) — intersect with each tract for acres and %"
+    force_download: false
+
+  uta_stops:
+    url: "https://maps.rideuta.com/server/rest/services/Hosted/UTA_Stops_and_Most_Recent_Ridership/FeatureServer/0"
+    description: "Full UTA stops (all modes) — filter to Rail and BRT in processing script"
+    force_download: false
+
+  sap_buffers:
+    url: "https://services2.arcgis.com/EiGeaCDLpVDPqdJ5/arcgis/rest/services/Station_Area_Planning_Data/FeatureServer/2"
+    description: "Station Area Plan buffer polygons — intersect with each tract for SAP buffer acres and %"
+    force_download: false
+
+  freeway_interchanges:
+    url: "https://services.arcgis.com/pA2nEVnB6tquxgOW/arcgis/rest/services/Freeway_Exit_Locations/FeatureServer/0"
+    description: "Freeway interchange points — count within each tract; distance to nearest when none present"
+    force_download: false
+
+  housing_inventory:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/hui_for_web2_gdb/FeatureServer/1"
+    description: "Jan 1 2025 Housing Unit Inventory — housing unit counts by type and residential acres (SFD vs MF/SFA)"
+    force_download: false
+
+  ato:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/AccessToOpportunities_gdb/FeatureServer/0"
+    description: >
+      TAZ-level Access to Opportunities scores. DEVACRES used as area weight for
+      aggregating TAZ scores to tract level (weighted average). Key fields:
+        JOBAUTO_23   — jobs reachable within typical auto commute (workplace ATO)
+        HHAUTO_23    — HHs reachable within typical auto commute (workplace ATO)
+        JOBTRANSIT_23 — jobs reachable within typical transit commute
+        HHTRANSIT_23  — HHs reachable within typical transit commute
+    force_download: false
+
+  taz_hh_projections:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/Household_Projections_TAZ_RTP_2023/FeatureServer/0"
+    description: >
+      TAZ-level household projections (2023 RTP). SECategory = 'TOTHH' only — one row
+      per TAZ. Key fields: TAZID (join), CO_FIPS (model-internal county ID, not standard
+      FIPS — use spatial join to link to tracts), DEVACRES (area weight), YEAR2027 and
+      YEAR2037 (compute HHs added as YEAR2037 - YEAR2027). Use area proportioning where
+      TAZ boundaries cross tract boundaries.
+    force_download: false
+
+  taz_pop_projections:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/Population_TAZ_Projections_RTP_2023/FeatureServer/0"
+    description: >
+      TAZ-level population projections (2023 RTP). SECategory = 'HHPOP' — household
+      population. Same schema as taz_hh_projections and taz_job_projections: TAZID,
+      CO_FIPS (model-internal), DEVACRES, YEAR2027–YEAR2037. Compute population added
+      as YEAR2037 - YEAR2027. Use spatial join + area proportioning to link to tracts.
+    force_download: false
+
+  taz_job_projections:
+    url: "https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/All_Jobs_Projections_TAZ_RTP_2023/FeatureServer/0"
+    description: >
+      TAZ-level job projections (2023 RTP). SECategory = 'ALLEMP' — all employment
+      (typical jobs per spec; excludes ag, const, mining). Same schema as
+      taz_hh_projections: TAZID, CO_FIPS (model-internal), DEVACRES, YEAR2027–YEAR2037.
+      Compute jobs added as YEAR2037 - YEAR2027. Use spatial join + area proportioning
+      to link to tracts.
+    force_download: false
+
+# ---------------------------------------------------------------------------
+# Census TIGER/Line boundaries  (tigris package)
+# ---------------------------------------------------------------------------
+tigris:
+  state: "UT"
+  year: 2024
+  layers:
+    counties:
+      force_download: false
+    tracts:
+      force_download: false
+    places:
+      force_download: false
+
+# ---------------------------------------------------------------------------
+# ACS demographic estimates  (tidycensus package)
+# ---------------------------------------------------------------------------
+tidycensus:
+  state: "UT"
+  year: 2024 # Most recent 5-year ACS available
+  survey: "acs5"
+  geography: "tract"
+  force_download: false
+  variables:
+    population: "B01003_001" # sourced directly from ACS rather than UI layer's pop_2024
+    households: "B11001_001"

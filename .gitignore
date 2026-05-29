@@ -1,0 +1,12 @@
+# Replicable remote downloads — gitignore if files exceed GitHub's 100 MB limit.
+# Toggle by commenting/uncommenting the line below.
+data/remotes/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+
+# renv — library is not committed; restore with renv::restore()
+renv/library/
+renv/staging/
