@@ -296,6 +296,44 @@ tract_info <- oz_tracts |>
   dplyr::arrange(county, GEOID)
 ```
 
+## Centers
+
+```{r}
+#| label: centers
+
+# Intersect oz_tracts with Wasatch Choice centers — acres per CenterType per tract
+wc_intersection <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(wc_centers, CenterType)
+  )
+) |>
+  dplyr::mutate(int_m2 = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(int_m2 > 0) |>
+  dplyr::group_by(GEOID, CenterType) |>
+  dplyr::summarise(acres = sum(int_m2) / 4046.8564, .groups = "drop")
+
+# Pivot wide: one wc_acres_* and one wc_pct_* column per CenterType.
+# col_id converts "Metropolitan Center" → "metropolitan_center" etc.
+centers_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(wc_intersection, by = "GEOID") |>
+  dplyr::left_join(total_acres_df,  by = "GEOID") |>
+  dplyr::mutate(
+    pct    = round(acres / total_acres * 100, 1),
+    col_id = tolower(gsub("[^a-zA-Z0-9]+", "_", CenterType))
+  ) |>
+  dplyr::select(GEOID, col_id, acres, pct) |>
+  tidyr::pivot_wider(
+    names_from  = col_id,
+    values_from = c(acres, pct),
+    values_fill = 0,
+    names_glue  = "wc_{.value}_{col_id}"
+  )
+```
+
 ## Housing
 
 ```{r}
