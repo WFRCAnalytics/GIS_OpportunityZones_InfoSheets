@@ -3496,8 +3496,8 @@
     },
     "tinytable": {
       "Package": "tinytable",
-      "Version": "0.16.0",
-      "Source": "Repository",
+      "Version": "0.16.0.11",
+      "Source": "GitHub",
       "Type": "Package",
       "Title": "Simple and Configurable Tables in 'HTML', 'LaTeX', 'Markdown', 'Word', 'PNG', 'PDF', and 'Typst' Formats",
       "Description": "Create highly customized tables with this simple and dependency-free package. Data frames can be converted to 'HTML', 'LaTeX', 'Markdown', 'Word', 'PNG', 'PDF', or 'Typst' tables. The user interface is minimalist and easy to learn. The syntax is concise. 'HTML' tables can be customized using the flexible 'Bootstrap' framework, and 'LaTeX' code with the 'tabularray' package.",
@@ -3525,6 +3525,7 @@
         "modelsummary",
         "pandoc",
         "pkgdown",
+        "png",
         "quarto",
         "Rdatasets",
         "rmarkdown",
@@ -3544,10 +3545,15 @@
       "License": "GPL (>= 3)",
       "Encoding": "UTF-8",
       "RoxygenNote": "7.3.3",
-      "NeedsCompilation": "no",
+      "Roxygen": "list(markdown = TRUE)",
       "Author": "Vincent Arel-Bundock [aut, cre] (ORCID: <https://orcid.org/0000-0003-2042-7063>)",
       "Maintainer": "Vincent Arel-Bundock <vincent.arel-bundock@umontreal.ca>",
-      "Repository": "CRAN"
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "vincentarelbundock",
+      "RemoteRepo": "tinytable",
+      "RemoteRef": "main",
+      "RemoteSha": "05a355ed914f20a14db430c2fc43bb0678b0666f"
     },
     "tinytex": {
       "Package": "tinytex",

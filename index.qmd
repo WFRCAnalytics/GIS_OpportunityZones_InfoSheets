@@ -110,7 +110,9 @@ oz_tracts <- sf::read_sf(
     county = factor(
       names(county_fips)[match(COUNTYF, county_fips)],
       levels = county_order
-    )
+    ),
+    mfi = dplyr::na_if(mfi, "not available"),
+    mfi = as.integer(readr::parse_number(mfi))
   )
 
 # Urban Institute layer — attributes only; filtered to candidate tract GEOIDs
@@ -263,7 +265,7 @@ acs <- readr::read_csv(
 
 ```{r}
 #| label: tract-info
-# Total tract area (m² → acres; CRS 26912 is metric)
+# Total tract area (sqm → acres; CRS 26912 is metric)
 total_acres_df <- data.frame(
   GEOID = oz_tracts$GEOID,
   total_acres = as.numeric(sf::st_area(oz_tracts)) / 4046.8564
@@ -272,15 +274,15 @@ total_acres_df <- data.frame(
 # OZ 1.0 overlap — oz_1 already filtered to state at read time
 oz1_overlap <- suppressWarnings(
   sf::st_intersection(
-    dplyr::select(oz_tracts, GEOID),
-    dplyr::select(oz_1, OBJECTID)
+    oz_tracts |> dplyr::select(GEOID),
+    oz_1 |> dplyr::select(OBJECTID)
   )
 ) |>
   dplyr::mutate(overlap_m2 = as.numeric(sf::st_area(geom))) |>
   sf::st_drop_geometry() |>
   dplyr::filter(overlap_m2 > 0) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(oz1_acres = sum(overlap_m2) / 4046.8564, .groups = "drop")
+  dplyr::summarize(oz1_acres = sum(overlap_m2) / 4046.8564, .groups = "drop")
 
 # Developable acres — area-proportioned from ATO DEVACRES where TAZ boundaries
 # cross tract boundaries: contribution = DEVACRES × (intersection_area / TAZ_area)
@@ -290,8 +292,8 @@ ato_areas_df <- data.frame(
 )
 dev_acres_df <- suppressWarnings(
   sf::st_intersection(
-    dplyr::select(oz_tracts, GEOID),
-    dplyr::select(ato, TAZID, DEVACRES)
+    oz_tracts |> dplyr::select(GEOID),
+    ato |> dplyr::select(TAZID, DEVACRES)
   )
 ) |>
   dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
@@ -300,7 +302,7 @@ dev_acres_df <- suppressWarnings(
   dplyr::left_join(ato_areas_df, by = "TAZID") |>
   dplyr::mutate(dev_acres_contrib = DEVACRES * (int_area / taz_area)) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(dev_acres = sum(dev_acres_contrib), .groups = "drop")
+  dplyr::summarize(dev_acres = sum(dev_acres_contrib), .groups = "drop")
 
 # Assemble: one row per OZ 2.0 candidate tract, sorted by county then tract ID
 tract_info <- oz_tracts |>
@@ -335,7 +337,7 @@ wc_intersection <- suppressWarnings(
   sf::st_drop_geometry() |>
   dplyr::filter(int_m2 > 0) |>
   dplyr::group_by(GEOID, CenterType) |>
-  dplyr::summarise(acres = sum(int_m2) / 4046.8564, .groups = "drop")
+  dplyr::summarize(acres = sum(int_m2) / 4046.8564, .groups = "drop")
 
 # Pivot wide: one wc_acres_* and one wc_pct_* column per CenterType.
 # col_id converts "Metropolitan Center" → "metropolitan_center" etc.
@@ -357,6 +359,23 @@ centers_info <- oz_tracts |>
   )
 ```
 
+```{r}
+#| label: centers-composite
+# 1) % of tract covered by MUorC (Metropolitan, Urban, or City) center types.
+#    Center polygons do not overlap within a tract, so summing individual pcts is valid.
+muc_pct_cols <- paste0(
+  "wc_pct_",
+  c("metropolitan_center", "urban_center", "city_center")
+)
+centers_info <- centers_info |>
+  dplyr::mutate(
+    wc_muc_pct = rowSums(
+      dplyr::pick(dplyr::any_of(muc_pct_cols)),
+      na.rm = TRUE
+    )
+  )
+```
+
 ## Housing
 
 ```{r}
@@ -375,7 +394,7 @@ housing_joined <- sf::st_join(
 # Totals per tract
 housing_totals <- housing_joined |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(
+  dplyr::summarize(
     units_total = sum(UNIT_COUNT, na.rm = TRUE),
     res_acres_total = sum(ACRES, na.rm = TRUE),
     .groups = "drop"
@@ -385,7 +404,7 @@ housing_totals <- housing_joined |>
 # in the data, so verify TYPE values before interpreting columns
 housing_by_type <- housing_joined |>
   dplyr::group_by(GEOID, TYPE) |>
-  dplyr::summarise(units = sum(UNIT_COUNT, na.rm = TRUE), .groups = "drop") |>
+  dplyr::summarize(units = sum(UNIT_COUNT, na.rm = TRUE), .groups = "drop") |>
   tidyr::pivot_wider(
     names_from = TYPE,
     values_from = units,
@@ -393,19 +412,18 @@ housing_by_type <- housing_joined |>
     names_prefix = "units_"
   )
 
-# Residential acres by category — TYPE values ("SFD", "MF", "SFA") must match
-# actual values in the housing_inventory layer; adjust case_when if they differ
 housing_acres <- housing_joined |>
   dplyr::mutate(
     acre_cat = dplyr::case_when(
-      TYPE == "SFD" ~ "sfd",
-      TYPE %in% c("MF", "SFA") ~ "mf_sfa",
+      TYPE == "single_family" ~ "sfd",
+      TYPE == "multi_family"  ~ "mf_sfa",
       TRUE ~ NA_character_
     )
   ) |>
   dplyr::filter(!is.na(acre_cat)) |>
   dplyr::group_by(GEOID, acre_cat) |>
-  dplyr::summarise(acres = sum(ACRES, na.rm = TRUE), .groups = "drop") |>
+  dplyr::summarize(acres = sum(ACRES, na.rm = TRUE), .groups = "drop") |>
+  tidyr::complete(GEOID, acre_cat = c("sfd", "mf_sfa"), fill = list(acres = 0)) |>
   tidyr::pivot_wider(
     names_from = acre_cat,
     values_from = acres,
@@ -436,7 +454,7 @@ stops_within <- sf::st_join(
   sf::st_drop_geometry() |>
   dplyr::filter(!is.na(stopname)) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(
+  dplyr::summarize(
     transit_stop_count = dplyr::n(),
     transit_stop_names = paste(sort(unique(stopname)), collapse = "; "),
     .groups = "drop"
@@ -472,7 +490,7 @@ sap_overlap <- suppressWarnings(
   sf::st_drop_geometry() |>
   dplyr::filter(sap_m2 > 0) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(sap_acres = sum(sap_m2) / 4046.8564, .groups = "drop")
+  dplyr::summarize(sap_acres = sum(sap_m2) / 4046.8564, .groups = "drop")
 
 # ---- ATO transit scores — weighted avg by proportioned DEVACRES ----
 # Reuses ato_areas_df (TAZ total areas) computed in tract-info chunk
@@ -488,7 +506,7 @@ ato_transit_df <- suppressWarnings(
   dplyr::left_join(ato_areas_df, by = "TAZID") |>
   dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(
+  dplyr::summarize(
     ato_jobtransit = sum(JOBTRANSIT_23 * weight, na.rm = TRUE) /
       sum(weight, na.rm = TRUE),
     ato_hhtransit = sum(HHTRANSIT_23 * weight, na.rm = TRUE) /
@@ -530,6 +548,15 @@ transit_info <- oz_tracts |>
   dplyr::left_join(ato_transit_df, by = "GEOID")
 ```
 
+```{r}
+#| label: transit-sap-housing
+# 3) Planned housing units in SAP areas within each tract, normalized by tract acres.
+#    Byron Head is assembling SAP plan tracking data (WFRC + MAG regions).
+#    Stubbed as NA until that dataset is provided; join to transit_info by GEOID.
+transit_info <- transit_info |>
+  dplyr::mutate(sap_planned_hh_per_acre = NA_real_)
+```
+
 ## Auto
 
 ```{r}
@@ -543,7 +570,7 @@ interchanges_within <- sf::st_join(
   sf::st_drop_geometry() |>
   dplyr::filter(!is.na(xid)) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(freeway_exit_count = dplyr::n(), .groups = "drop")
+  dplyr::summarize(freeway_exit_count = dplyr::n(), .groups = "drop")
 
 # Distance to nearest interchange — cleared for tracts that already have one
 nearest_exit_idx <- sf::st_nearest_feature(oz_tracts, freeway_exits)
@@ -577,7 +604,7 @@ ato_auto_df <- suppressWarnings(
   dplyr::left_join(ato_areas_df, by = "TAZID") |>
   dplyr::mutate(weight = DEVACRES * (int_area / taz_area)) |>
   dplyr::group_by(GEOID) |>
-  dplyr::summarise(
+  dplyr::summarize(
     ato_jobauto = sum(JOBAUTO_23 * weight, na.rm = TRUE) /
       sum(weight, na.rm = TRUE),
     ato_hhauto = sum(HHAUTO_23 * weight, na.rm = TRUE) /
@@ -607,6 +634,35 @@ auto_info <- oz_tracts |>
   dplyr::left_join(ato_auto_df, by = "GEOID")
 ```
 
+```{r}
+#| label: ato-composite
+# 2) Composite ATO score — "both modes both ways":
+#    min-max normalize each of the 4 components to 0–100 across all tracts,
+#    then average. Yields a single 0–100 index for cross-tract comparison.
+ato_composite_df <- transit_info |>
+  dplyr::select(GEOID, ato_jobtransit, ato_hhtransit) |>
+  dplyr::left_join(
+    dplyr::select(auto_info, GEOID, ato_jobauto, ato_hhauto),
+    by = "GEOID"
+  ) |>
+  dplyr::mutate(
+    dplyr::across(
+      c(ato_jobtransit, ato_hhtransit, ato_jobauto, ato_hhauto),
+      ~ {
+        mn <- min(.x, na.rm = TRUE)
+        mx <- max(.x, na.rm = TRUE)
+        if (mx > mn) (.x - mn) / (mx - mn) * 100 else 0
+      },
+      .names = "{.col}_norm"
+    ),
+    ato_composite = rowMeans(
+      dplyr::pick(dplyr::ends_with("_norm")),
+      na.rm = TRUE
+    )
+  ) |>
+  dplyr::select(GEOID, ato_composite)
+```
+
 ## Projected Growth
 
 ```{r}
@@ -630,7 +686,7 @@ auto_info <- oz_tracts |>
     dplyr::left_join(taz_areas, by = "TAZID") |>
     dplyr::mutate(contrib = (YEAR2037 - YEAR2027) * (int_area / taz_area)) |>
     dplyr::group_by(GEOID) |>
-    dplyr::summarise(
+    dplyr::summarize(
       !!value_col := round(sum(contrib, na.rm = TRUE)),
       .groups = "drop"
     )
@@ -647,6 +703,30 @@ growth_info <- oz_tracts |>
   dplyr::left_join(pop_growth_df, by = "GEOID") |>
   dplyr::left_join(job_growth_df, by = "GEOID") |>
   dplyr::mutate(dplyr::across(where(is.numeric), ~ dplyr::coalesce(.x, 0L)))
+```
+
+```{r}
+#| label: growth-eru
+# 4) Equivalent Residential Units (ERU) added, normalized by total tract acres.
+#    Converts projected HH and job growth to a common density metric so tracts
+#    can be compared regardless of size. Conversion: 1 HH = 1 ERU, 1 job = 0.4 ERU
+#    (common planning assumption; adjust eru_jobs_factor if a different standard applies).
+eru_jobs_factor <- 0.4
+
+growth_info <- growth_info |>
+  dplyr::left_join(
+    dplyr::select(total_acres_df, GEOID, total_acres),
+    by = "GEOID"
+  ) |>
+  dplyr::mutate(
+    eru_added = hh_added + jobs_added * eru_jobs_factor,
+    eru_per_acre = dplyr::if_else(
+      total_acres > 0,
+      round(eru_added / total_acres, 2),
+      NA_real_
+    )
+  ) |>
+  dplyr::select(-total_acres)
 ```
 
 ## Urban Institute
@@ -828,6 +908,7 @@ tract_maps <- purrr::set_names(
 ```
 
 ```{r}
+#| eval: false
 tract_maps[["49035102900"]]
 ```
 
@@ -842,6 +923,7 @@ report_data <- tract_info |>
   dplyr::left_join(housing_info, by = "GEOID") |>
   dplyr::left_join(transit_info, by = "GEOID") |>
   dplyr::left_join(auto_info, by = "GEOID") |>
+  dplyr::left_join(ato_composite_df, by = "GEOID") |>
   dplyr::left_join(growth_info, by = "GEOID") |>
   dplyr::left_join(ui_info, by = "GEOID")
 
@@ -852,7 +934,7 @@ saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
 
 # Render one Typst PDF per county; county order preserved via factor levels
 dir.create(settings$output_dir, showWarnings = FALSE, recursive = TRUE)
-purrr::walk(levels(report_data$county), function(county_name) {
+purrr::walk(levels(droplevels(report_data$county)), function(county_name) {
   out_file <- paste0(gsub(" ", "_", county_name), "_OZ_Info_Sheet.pdf")
   quarto::quarto_render(
     input = "_county_report.qmd",

@@ -8,8 +8,11 @@ Note: we'll aim to produce the data elements below, we can then decide to exclud
 
 **Tract Info:**  *County (sort by, primary), Tract ID (sort by, secondary)*, Current Population, Current HH estimate, Intersection with OZ 1.0 (acres, %), Total Acres, Developable Acres (from TDM TAZ)\*, *maybe give a descriptive name to each tract?*  
 
+*I realize the list below is the fodder.  So I know you know this, but the deliverable needs to be easily absorbable.  I’ve bolded the four key measures in my mind.* 
+
 **Centers and other Regionally Significant Land Uses:** (area of intersection)
 
+* **1\) \*\*% of tract with MUorC centers**  
 * Metropolitan Center: acres (% of tract)  
 * Urban Center: acres (% of tract)  
 * City Center: acres (% of tract)  
@@ -18,12 +21,18 @@ Note: we'll aim to produce the data elements below, we can then decide to exclud
 * Employment District: acres (% of tract)  
 * Industrial District: acres (% of tract)  
 * Retail District: acres (% of tract)  
-* Special District: acres (% of tract)  note: these are military and other non-developable lands
+* Special District: acres (% of tract)  note: these are military and other non-developable lands  
+* 
 
 **Housing:** (from Jan 1 2025 Housing Unit Inventory)
 
 * Current housing units: count by type  
 * Residential development: Total acres, SFD acres, MF/SFA acres
+
+
+ATO:
+
+* **2\) \*\*We need a composite ATO score for both modes both ways**
 
 **Auto:**
 
@@ -35,13 +44,14 @@ Note: we'll aim to produce the data elements below, we can then decide to exclud
 
 * Current Rail and BRT Stations within: Count (List of Names)\*\*  
 * SAP buffer areas: acres (% of tract)  
-* Additional housing planned in station area plans within tract (BYRON will provide this separately based on his SAP plan tracking, he has the MAG info too)  
+* **3\) \*\*Additional housing planned in station area plans within tract normalized by tract area** (BYRON will provide this separately based on his SAP plan tracking, he has the MAG info too)  
 * Workplace [ATO](https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/AccessToOpportunities_gdb/FeatureServer/0): Jobs within typical transit commute\*\*\*  
 * Workplace ATO: HHs within typical transit commute\*\*\*  
 * Planned station notes: additional Phase 1 stations planned / needed
 
 **Projected Growth 2027 \- 2037 (**from regional forecast feature services, see links)
 
+* **4\) \*\*Can we convert the below into Equivalent Residential Units (normalized by tract area)?**    
 * [HHs added](https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/Household_Projections_TAZ_RTP_2023/FeatureServer/0)\*  
 * [Population added](https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/Household_Projections_TAZ_RTP_2023/FeatureServer/0)\*  
 * [Jobs added](https://services1.arcgis.com/taguadKoI1XFwivx/ArcGIS/rest/services/Household_Projections_TAZ_RTP_2023/FeatureServer/0)\* (we'll use this dataset for typical jobs, which excludes ag, const, & mining)

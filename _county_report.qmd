@@ -24,9 +24,9 @@ library(purrr)
 library(yaml)
 library(tinytable)
 
-settings    <- yaml::read_yaml("config/settings.yml")
+settings <- yaml::read_yaml("config/settings.yml")
 report_data <- readRDS(file.path(params$data_dir, "report_data.rds"))
-tract_maps  <- readRDS(file.path(params$data_dir, "tract_maps.rds"))
+tract_maps <- readRDS(file.path(params$data_dir, "tract_maps.rds"))
 
 county_data <- dplyr::filter(report_data, county == params$county) |>
   dplyr::arrange(GEOID)
@@ -37,7 +37,6 @@ county_maps <- tract_maps[county_data$GEOID]
 ```{r}
 #| label: save-maps
 #| include: false
-
 # Save each tract map to PNG so tinytable can embed them as inline images.
 # PNGs are cached in data_dir/map_cache/ — safe to delete and regenerate.
 map_dir <- file.path(params$data_dir, "map_cache")
@@ -47,11 +46,11 @@ map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
   path <- file.path(map_dir, paste0(geoid, ".png"))
   ggplot2::ggsave(
     filename = path,
-    plot     = map,
-    width    = settings$map_width_in,
-    height   = settings$map_height_in,
-    dpi      = 200,
-    bg       = "white"
+    plot = map,
+    width = settings$map_width_in,
+    height = settings$map_height_in,
+    dpi = 200,
+    bg = "white"
   )
   path
 })
@@ -59,60 +58,97 @@ map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
 
 ```{r}
 #| label: table
-
 tbl_data <- county_data |>
-  dplyr::mutate(map = "") |>    # placeholder; filled by plot_tt() below
+  dplyr::mutate(
+    map = "", # placeholder; filled by plot_tt() below
+    mfi = format(mfi, big.mark = ",", scientific = FALSE, trim = TRUE)
+  ) |>
   dplyr::select(
     # Map (col 1 — filled by plot_tt)
     map,
 
     # Tract Info
-    GEOID, pop, hh,
-    total_acres, oz1_acres, oz1_pct, dev_acres,
+    GEOID,
+    pop,
+    hh,
+    total_acres,
+    oz1_acres,
+    oz1_pct,
+    dev_acres,
 
     # Urban Institute
-    oztoolclassification, pvrty_r, unmpl_r, mfi,
+    oztoolclassification,
+    pvrty_r,
+    unmpl_r,
+    mfi,
 
     # Housing
-    units_total, res_acres_total, res_acres_sfd, res_acres_mf_sfa,
+    units_total,
+    res_acres_total,
+    res_acres_sfd,
+    res_acres_mf_sfa,
 
     # Transit
-    transit_stop_count, sap_acres, sap_pct,
-    ato_jobtransit, ato_hhtransit,
+    transit_stop_count,
+    sap_acres,
+    sap_pct,
+    ato_jobtransit,
+    ato_hhtransit,
 
     # Auto
-    freeway_exit_count, ato_jobauto, ato_hhauto,
+    freeway_exit_count,
+    ato_jobauto,
+    ato_hhauto,
 
     # Growth 2027-2037
-    hh_added, pop_added, jobs_added
+    hh_added,
+    pop_added,
+    jobs_added
   )
 
 col_labels <- c(
   "Map",
-  "Tract ID", "Population", "Households",
-  "Total Acres", "OZ 1.0 Acres", "OZ 1.0 %", "Dev. Acres",
-  "OZ Investment Likelihood", "Poverty Rate", "Unemp. Rate", "Median Family Income",
-  "Total Units", "Res. Acres", "SFD Acres", "MF/SFA Acres",
-  "Rail/BRT Stops", "SAP Acres", "SAP %",
-  "ATO Jobs (Transit)", "ATO HHs (Transit)",
-  "Freeway Exits", "ATO Jobs (Auto)", "ATO HHs (Auto)",
-  "HHs Added", "Pop. Added", "Jobs Added"
+  "Tract ID",
+  "Population",
+  "Households",
+  "Total Acres",
+  "OZ 1.0 Acres",
+  "OZ 1.0 %",
+  "Dev. Acres",
+  "OZ Investment Likelihood",
+  "Poverty Rate",
+  "Unemp. Rate",
+  "Median Family Income",
+  "Total Units",
+  "Res. Acres",
+  "SFD Acres",
+  "MF/SFA Acres",
+  "Rail/BRT Stops",
+  "SAP Acres",
+  "SAP %",
+  "ATO Jobs (Transit)",
+  "ATO HHs (Transit)",
+  "Freeway Exits",
+  "ATO Jobs (Auto)",
+  "ATO HHs (Auto)",
+  "HHs Added",
+  "Pop. Added",
+  "Jobs Added"
 )
 
 tinytable::tt(
-  tbl_data,
-  notes   = "Sources: Federal OZ 2.0 eligibility, Urban Institute, WFRC/MAG regional data. Growth projections 2027-2037.",
-  width   = 1
+  setNames(tbl_data, col_labels),
+  notes = "Sources: Federal OZ 2.0 eligibility, Urban Institute, WFRC/MAG regional data. Growth projections 2027-2037.",
+  width = 1
 ) |>
   tinytable::plot_tt(
-    j      = 1,
+    j = 1,
     images = unname(map_paths),
-    height = settings$map_height_in / 10,  # tinytable height is in inches / 10
-    width  = settings$map_width_in  / 10
+    height = settings$map_height_in / 10, # tinytable height is in inches / 10
+    width = settings$map_width_in / 10
   ) |>
-  tinytable::setNames(col_labels) |>
   tinytable::style_tt(
     fontsize = 6,
-    align    = "l"
+    align = "l"
   )
 ```
