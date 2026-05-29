@@ -300,9 +300,66 @@ tract_info <- oz_tracts |>
 
 ```{r}
 #| label: housing
-# Join Jan 1 2025 Housing Unit Inventory to each tract.
-# Columns: current housing unit count by type,
-# residential acres (total, SFD, MF/SFA).
+
+# Assign each housing polygon to the tract containing its centroid.
+# Centroid assignment is appropriate for parcel-level inventory data — units
+# belong to one tract; area-proportioning is not needed.
+housing_joined <- sf::st_join(
+  sf::st_centroid(housing_inv),
+  dplyr::select(oz_tracts, GEOID),
+  join = sf::st_within
+) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(!is.na(GEOID))
+
+# Totals per tract
+housing_totals <- housing_joined |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(
+    units_total     = sum(UNIT_COUNT, na.rm = TRUE),
+    res_acres_total = sum(ACRES,      na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Unit counts by TYPE — pivot wide; column names reflect actual TYPE values
+# in the data, so verify TYPE values before interpreting columns
+housing_by_type <- housing_joined |>
+  dplyr::group_by(GEOID, TYPE) |>
+  dplyr::summarise(units = sum(UNIT_COUNT, na.rm = TRUE), .groups = "drop") |>
+  tidyr::pivot_wider(
+    names_from   = TYPE,
+    values_from  = units,
+    values_fill  = 0L,
+    names_prefix = "units_"
+  )
+
+# Residential acres by category — TYPE values ("SFD", "MF", "SFA") must match
+# actual values in the housing_inventory layer; adjust case_when if they differ
+housing_acres <- housing_joined |>
+  dplyr::mutate(
+    acre_cat = dplyr::case_when(
+      TYPE == "SFD"             ~ "sfd",
+      TYPE %in% c("MF", "SFA") ~ "mf_sfa",
+      TRUE                      ~ NA_character_
+    )
+  ) |>
+  dplyr::filter(!is.na(acre_cat)) |>
+  dplyr::group_by(GEOID, acre_cat) |>
+  dplyr::summarise(acres = sum(ACRES, na.rm = TRUE), .groups = "drop") |>
+  tidyr::pivot_wider(
+    names_from   = acre_cat,
+    values_from  = acres,
+    values_fill  = 0,
+    names_prefix = "res_acres_"
+  )
+
+housing_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(housing_totals,  by = "GEOID") |>
+  dplyr::left_join(housing_by_type, by = "GEOID") |>
+  dplyr::left_join(housing_acres,   by = "GEOID") |>
+  dplyr::mutate(dplyr::across(where(is.numeric), ~dplyr::coalesce(.x, 0)))
 ```
 
 ## Transit
