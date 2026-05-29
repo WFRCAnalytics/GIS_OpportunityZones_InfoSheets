@@ -8,6 +8,10 @@ load_config <- function(path = "config/data_sources.yml") {
   yaml::read_yaml(path)
 }
 
+load_settings <- function(path = "config/settings.yml") {
+  yaml::read_yaml(path)
+}
+
 .cache_path <- function(remotes_dir, name) {
   file.path(remotes_dir, paste0(name, ".gpkg"))
 }
@@ -83,7 +87,7 @@ load_config <- function(path = "config/data_sources.yml") {
 # Ensures all layers are cached and returns a named list of file paths.
 # Callers read layers with sf::read_sf(cache_paths$name, query = ...).
 download_all <- function(config) {
-  remotes_dir <- config$settings$data_dir_remotes
+  remotes_dir <- config$data_dir_remotes
   dir.create(remotes_dir, showWarnings = FALSE, recursive = TRUE)
 
   arcgis <- mapply(

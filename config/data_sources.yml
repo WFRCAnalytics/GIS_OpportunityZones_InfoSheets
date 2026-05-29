@@ -1,15 +1,7 @@
 # Data source configuration for OZ Info Sheets
 
-# ---------------------------------------------------------------------------
-# Project-wide settings
-# ---------------------------------------------------------------------------
-settings:
-  state: "UT"
-  state_fips: "49"
-  crs_analysis: 26912 # NAD83 / UTM Zone 12N — meters, correct for Utah area calculations
-  output_dir: "output"
-  data_dir_raw: "data/raw" # raw source files — preserved and committed
-  data_dir_remotes: "data/remotes" # replicable downloads — gitignored when files exceed GitHub size limits
+data_dir_raw: "data/raw"          # raw source files — preserved and committed
+data_dir_remotes: "data/remotes"  # replicable downloads — gitignored when files exceed GitHub size limits
 
 # ---------------------------------------------------------------------------
 # ArcGIS Feature Service layers  (arcgislayers package)
