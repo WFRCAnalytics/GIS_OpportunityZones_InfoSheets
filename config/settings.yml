@@ -1,6 +1,7 @@
 # Project-wide analysis and output settings for OZ Info Sheets
 
 state: "UT"
+state_name: "Utah"
 state_fips: "49"
 crs_analysis: 26912  # NAD83 / UTM Zone 12N — meters, correct for Utah area calculations
 output_dir: "output"

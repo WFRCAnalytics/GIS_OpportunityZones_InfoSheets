@@ -76,8 +76,9 @@ county_geoids <- paste0(state_fips, county_fips)
 # Ensure all layers are cached; returns named list of file paths
 cache_paths <- download_all(config)
 
-# Shared SQL IN clause for county FIPS filtering
-county_fips_in <- paste0("'", county_fips, "'", collapse = ", ")
+# Shared SQL IN clauses for county filtering
+county_fips_in  <- paste0("'", county_fips,  "'", collapse = ", ")
+county_names_in <- paste0("'", county_order, "'", collapse = ", ")
 
 # TAZ projection layers use integer CO_FIPS (standard 3-digit FIPS as integer: '035' -> 35)
 co_fips_int_in <- paste(as.integer(county_fips), collapse = ", ")
@@ -136,10 +137,16 @@ places <- sf::read_sf(
 ) |>
   sf::st_transform(crs)
 
-# Geometry only — OBJECTID retained as feature ID
+# Filter to study counties at read time; STATENAME and COUNTYNAME are the available attribute filters
 oz_1 <- sf::read_sf(
   cache_paths$oz_1_tracts,
-  query = "SELECT OBJECTID, geom FROM oz_1_tracts"
+  query = sprintf(
+    "SELECT OBJECTID, geom FROM oz_1_tracts
+     WHERE STATENAME = '%s'
+       AND COUNTYNAME IN (%s)",
+    settings$state_name,
+    county_names_in
+  )
 ) |>
   sf::st_transform(crs)
 
@@ -231,14 +238,62 @@ acs <- readr::read_csv(cache_paths$acs, show_col_types = FALSE) |>
 
 ```{r}
 #| label: tract-info
-# Build the base tract table: one row per OZ 2.0 candidate tract.
-# oz_eligible_tracts is the primary source — it already contains:
-#   pop_2024, oztoolclassification, and Urban Institute socioeconomic indicators.
-# Join in: population (ACS B01003_001) and HH count (ACS B11001_001) — sourced
-#   directly from Census rather than UI layer's pop_2024; total acres (computed from geometry),
-#   OZ 1.0 overlap (acres, %), developable acres (area-proportioned from ATO TAZ),
-#   Wasatch Choice center intersections (acres and % by type: Metro, Urban, City, Neighborhood).
-# Key join field: GEOID20. Filter to WFRC/MAG counties before any joins.
+
+# Total tract area (m² → acres; CRS 26912 is metric)
+total_acres_df <- data.frame(
+  GEOID       = oz_tracts$GEOID,
+  total_acres = as.numeric(sf::st_area(oz_tracts)) / 4046.8564
+)
+
+# OZ 1.0 overlap — oz_1 already filtered to state at read time
+oz1_overlap <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(oz_1, OBJECTID)
+  )
+) |>
+  dplyr::mutate(overlap_m2 = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(overlap_m2 > 0) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(oz1_acres = sum(overlap_m2) / 4046.8564, .groups = "drop")
+
+# Developable acres — area-proportioned from ATO DEVACRES where TAZ boundaries
+# cross tract boundaries: contribution = DEVACRES × (intersection_area / TAZ_area)
+ato_areas_df <- data.frame(
+  TAZID    = ato$TAZID,
+  taz_area = as.numeric(sf::st_area(ato))
+)
+dev_acres_df <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(ato, TAZID, DEVACRES)
+  )
+) |>
+  dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(int_area > 0) |>
+  dplyr::left_join(ato_areas_df, by = "TAZID") |>
+  dplyr::mutate(dev_acres_contrib = DEVACRES * (int_area / taz_area)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarise(dev_acres = sum(dev_acres_contrib), .groups = "drop")
+
+# Assemble: one row per OZ 2.0 candidate tract, sorted by county then tract ID
+tract_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID, county, COUNTYF) |>
+  dplyr::left_join(
+    dplyr::select(acs, GEOID, pop = B01003_001, hh = B11001_001),
+    by = "GEOID"
+  ) |>
+  dplyr::left_join(total_acres_df, by = "GEOID") |>
+  dplyr::left_join(oz1_overlap,    by = "GEOID") |>
+  dplyr::mutate(
+    oz1_acres = dplyr::coalesce(oz1_acres, 0),
+    oz1_pct   = round(oz1_acres / total_acres * 100, 1)
+  ) |>
+  dplyr::left_join(dev_acres_df, by = "GEOID") |>
+  dplyr::arrange(county, GEOID)
 ```
 
 ## Housing

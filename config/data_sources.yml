@@ -34,7 +34,9 @@ arcgis_layers:
 
   oz_1_tracts:
     url: "https://services3.arcgis.com/GlpLTbxq481k9lgs/ArcGIS/rest/services/omidgley_OZ_Map_layers/FeatureServer/8"
-    description: "Final designated OZ 1.0 tracts — intersect with OZ 2.0 tracts to compute overlap acres and %"
+    description: >
+      Final designated OZ 1.0 tracts — intersect with OZ 2.0 tracts to compute overlap acres and %.
+      Filter fields: STATENAME (e.g. 'Utah'), COUNTYNAME. GEOID is in a non-standard format.
     force_download: false
 
   wasatch_choice_centers:
