@@ -12,7 +12,7 @@ format:
 
 ```{=typst}
 #set page(flipped: true)
-#set text(size: 7pt)
+#set text(font: "Poppins", size: 8pt)
 ```
 
 ```{r}
@@ -22,7 +22,6 @@ library(ggplot2)
 library(dplyr)
 library(purrr)
 library(yaml)
-library(tinytable)
 
 settings    <- yaml::read_yaml("config/settings.yml")
 report_data <- readRDS(file.path(params$data_dir, "report_data.rds"))
@@ -37,8 +36,6 @@ county_maps <- tract_maps[county_data$GEOID]
 ```{r}
 #| label: save-maps
 #| include: false
-# Save each tract map to PNG so tinytable can embed them as inline images.
-# PNGs are cached in data_dir/map_cache/ — safe to delete and regenerate.
 map_dir <- file.path(params$data_dir, "map_cache")
 dir.create(map_dir, showWarnings = FALSE)
 
@@ -57,49 +54,141 @@ map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
 ```
 
 ```{r}
-#| label: table
-tbl_data <- county_data |>
-  dplyr::mutate(
-    map           = "",  # placeholder; filled by plot_tt() below
-    wc_muc_pct    = round(wc_muc_pct,    1),
-    ato_composite = round(ato_composite, 1),
-    eru_per_acre  = round(eru_per_acre,  2)
-  ) |>
-  dplyr::select(
-    map,
-    GEOID, pop, hh,
-    total_acres, oz1_acres, oz1_pct, dev_acres,
-    oztoolclassification,
-    wc_muc_pct,
-    ato_composite,
-    sap_planned_hh_per_acre,
-    eru_per_acre
-  )
+#| label: pages
+#| results: asis
+#| echo: false
 
-col_labels <- c(
+fmt_val <- function(x, digits = 1, suffix = "", big_mark = "") {
+  if (length(x) == 0 || is.na(x)) return("—")
+  if (is.numeric(x) && !is.finite(x)) return("—")
+  rounded <- round(x, digits)
+  if (digits == 0 && nchar(big_mark) > 0) {
+    return(paste0(format(as.integer(rounded), big.mark = big_mark, scientific = FALSE), suffix))
+  }
+  paste0(format(rounded, scientific = FALSE), suffix)
+}
+
+oz_color <- function(cls) {
+  dplyr::case_when(
+    grepl("Likely to attract",   cls, ignore.case = TRUE) &
+      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "#2a7f46",
+    grepl("More likely",         cls, ignore.case = TRUE) ~ "#0072b5",
+    grepl("Less likely",         cls, ignore.case = TRUE) ~ "#e07b39",
+    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "#c0392b",
+    TRUE ~ "#888888"
+  )
+}
+
+oz_class_short <- function(cls) {
+  dplyr::case_when(
+    grepl("Likely to attract",   cls, ignore.case = TRUE) &
+      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "Likely",
+    grepl("More likely",         cls, ignore.case = TRUE) ~ "More Likely",
+    grepl("Less likely",         cls, ignore.case = TRUE) ~ "Less Likely",
+    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "Unlikely",
+    TRUE ~ "Unknown"
+  )
+}
+
+# ── Page header ──────────────────────────────────────────────────────────────
+cat("``` {=typst}\n")
+cat(sprintf(
+  '#block(width: 100%%, fill: rgb("#003b4f"), inset: (x: 0.15in, y: 0.06in))[#grid(columns: (1fr, auto))[#text(fill: white, weight: "bold", size: 9pt)[%s County — OZ 2.0 Eligible Tracts]][#align(right)[#text(fill: rgb("#7ec8e3"), size: 7pt)[Opportunity Zones Info Sheet | WFRC]]]]\n',
+  params$county
+))
+cat('#line(length: 100%, stroke: (paint: rgb("#7ec8e3"), thickness: 1.5pt))\n')
+cat('#v(0.06in)\n')
+
+# ── Summary table ─────────────────────────────────────────────────────────────
+# Columns: map | tract | profile | oz1 | wc | ato | sap | eru | oz_likelihood
+# Fixed widths sum to 10.20in (usable landscape width with x: 0.4in margins)
+cat('#table(\n')
+cat('  columns: (1.8in, 0.90in, 1.40in, 0.80in, 1.0in, 0.90in, 1.1in, 1.1in, 1.20in),\n')
+cat('  stroke: none,\n')
+cat('  fill: (col, row) => if row == 0 { rgb("#003b4f") } else if calc.odd(row) { rgb("#ddeef5") } else { white },\n')
+cat('  inset: (x: 5pt, y: 5pt),\n')
+cat('  align: (col, row) => if row == 0 { center + horizon } else if col <= 2 { left + top } else if col == 8 { center + top } else { right + top },\n')
+
+cat('  table.header(\n')
+header_labels <- c(
   "Map",
-  "Tract ID", "Pop.", "HH",
-  "Total Acres", "OZ 1.0 Acres", "OZ 1.0 %", "Dev. Acres",
-  "OZ Investment Likelihood",
-  "MUorC Cov. %",
-  "ATO Score (0-100)",
-  "SAP HH/Acre",
-  "ERU/Acre"
+  "Tract GEOID",
+  "Tract Profile",
+  "OZ 1.0#linebreak()Acres / %",
+  "Wasatch Choice#linebreak()Center Coverage",
+  "Access to#linebreak()Opportunities#linebreak()Score (0–100)",
+  "Station Area Plan#linebreak()Housing (HH/Acre)",
+  "Projected Growth#linebreak()2027–37 (ERU/Acre)",
+  "OZ Investment#linebreak()Likelihood#linebreak()#[(Urban Institute)]"
 )
+for (lbl in header_labels) {
+  cat(sprintf('    [#text(fill: white, weight: "bold", size: 7pt)[%s]],\n', lbl))
+}
+cat('  ),\n')
 
-tinytable::tt(
-  setNames(tbl_data, col_labels),
-  notes = "Sources: Federal OZ 2.0 eligibility, Urban Institute, WFRC/MAG regional data. Growth projections 2027-2037. ATO = Access to Opportunities.",
-  width = 1
-) |>
-  tinytable::plot_tt(
-    j      = 1,
-    images = unname(map_paths),
-    height = settings$map_height_in / 10,
-    width  = settings$map_width_in  / 10
-  ) |>
-  tinytable::style_tt(
-    fontsize = 6,
-    align    = "l"
-  )
+# ── Data rows ─────────────────────────────────────────────────────────────────
+for (i in seq_len(nrow(county_data))) {
+  tract <- county_data[i, ]
+  geoid <- as.character(tract$GEOID)
+  g     <- function(col) if (col %in% names(tract)) tract[[col]] else NA_real_
+  fv    <- function(col, d = 1, s = "", m = "") fmt_val(g(col), d, s, m)
+
+  map_path_fwd <- gsub("\\\\", "/", map_paths[[geoid]])
+
+  # Col 1: Map
+  cat(sprintf('  [#image("%s", width: 100%%)],\n', map_path_fwd))
+
+  # Col 2: Tract ID
+  cat(sprintf('  [%s],\n', geoid))
+
+  # Col 3: Tract Profile (Pop, HH, Total Acres, Dev. Acres)
+  pop_str   <- fv("pop",        0, m = ",")
+  hh_str    <- fv("hh",         0, m = ",")
+  acres_str <- fv("total_acres", 1)
+  devac_str <- fv("dev_acres",  1)
+  cat(paste0(
+    '  [#strong[Pop.:] ', pop_str,
+    ' #h(4pt) #strong[HH:] ', hh_str,
+    '#linebreak()#strong[Total Acres:] ', acres_str,
+    '#linebreak()#strong[Dev. Acres:] ', devac_str,
+    '],\n'
+  ))
+
+  # Col 4: OZ 1.0 (acres on line 1, pct on line 2)
+  cat(paste0(
+    '  [', fv("oz1_acres", 1), ' ac#linebreak()',
+    fv("oz1_pct", 1, "%"), '],\n'
+  ))
+
+  # Col 5: Wasatch Choice Center Coverage (plain number)
+  cat(paste0('  [', fv("wc_muc_pct", 1, "%"), '],\n'))
+
+  # Col 6: Access to Opportunities Score (plain number)
+  cat(paste0('  [', fv("ato_composite", 1), '],\n'))
+
+  # Col 7: Station Area Plan Housing (HH/Acre)
+  cat(paste0('  [', fv("sap_planned_hh_per_acre", 2), '],\n'))
+
+  # Col 8: Projected Growth 2027-37 (ERU/Acre)
+  cat(paste0('  [', fv("eru_per_acre", 2), '],\n'))
+
+  # Col 9: OZ Investment Likelihood — last column, attributed to Urban Institute
+  oz_cls_raw <- if (is.na(g("oztoolclassification"))) NA_character_
+                else as.character(g("oztoolclassification"))
+  if (is.na(oz_cls_raw)) {
+    cat('  [—],\n')
+  } else {
+    cat(paste0(
+      '  [#box(fill: rgb("', oz_color(oz_cls_raw), '"), radius: 2pt, inset: (x: 4pt, y: 3pt))',
+      '[#text(fill: white, size: 7pt, weight: "bold")[', oz_class_short(oz_cls_raw), ']]],\n'
+    ))
+  }
+}
+
+cat(')\n')
+cat('#v(0.04in)\n')
+cat('#line(length: 100%, stroke: (paint: rgb("#dddddd"), thickness: 0.5pt))\n')
+cat('#v(1pt)\n')
+cat('#align(right)[#text(size: 5.5pt, fill: rgb("#888888"))[Sources: Federal OZ 2.0 eligibility, Urban Institute OZ Tool, WFRC/MAG regional data. Growth projections 2027–2037. ATO = Access to Opportunities. ERU = Equivalent Residential Unit. SAP = Station Area Plan. WC = Wasatch Choice.]]\n')
+cat("```\n")
 ```

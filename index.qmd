@@ -939,6 +939,18 @@ detail_dir   <- file.path(settings$output_dir, "detail")
 dir.create(summary_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(detail_dir,  showWarnings = FALSE, recursive = TRUE)
 
+# Pre-flight: Typst always writes to <input-basename>.pdf as an intermediate
+# before renaming to output_file. If those files are open in a PDF viewer on
+# Windows, the write is blocked. Delete them now so the pipeline doesn't fail
+# mid-run on the first county.
+for (.f in c("_county_summary.pdf", "_county_detail.pdf")) {
+  if (file.exists(.f) && !suppressWarnings(file.remove(.f))) {
+    stop(sprintf("Close '%s' in your PDF viewer before running the pipeline.", .f),
+         call. = FALSE)
+  }
+}
+rm(.f)
+
 purrr::walk(county_names, function(county_name) {
   slug <- gsub(" ", "_", county_name)
 

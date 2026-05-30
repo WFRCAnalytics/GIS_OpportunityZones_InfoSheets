@@ -13,3 +13,10 @@ data/remotes/
 # renv — library is not committed; restore with renv::restore()
 renv/library/
 renv/staging/
+
+/.quarto/
+**/*.quarto_ipynb
+
+# HTML build artifacts from quarto render index.qmd
+output/index.html
+output/index_files/
