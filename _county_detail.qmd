@@ -12,7 +12,8 @@ format:
 
 ```{=typst}
 #set page(flipped: true)
-#set text(font: "Poppins", size: 8pt)
+#set text(font: "Poppins", size: 8pt, number-type: "lining", number-width: "tabular")
+#set par(spacing: 0pt, leading: 0.5em)
 ```
 
 ```{r}
@@ -36,17 +37,16 @@ county_maps <- tract_maps[county_data$GEOID]
 ```{r}
 #| label: save-maps
 #| include: false
-# Shared map_cache/ with summary — PNGs already written if summary ran first.
 map_dir <- file.path(params$data_dir, "map_cache")
 dir.create(map_dir, showWarnings = FALSE)
 
 map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
-  path <- file.path(map_dir, paste0(geoid, ".png"))
+  path <- file.path(map_dir, paste0("d_", geoid, ".png"))
   ggplot2::ggsave(
     filename = path,
     plot     = map,
     width    = settings$map_width_in,
-    height   = settings$map_height_in,
+    height   = settings$detail_map_height_in,
     dpi      = 200,
     bg       = "white"
   )
@@ -59,8 +59,22 @@ map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
 #| results: asis
 #| echo: false
 
-# ── Utility helpers ───────────────────────────────────────────────────────────
+# ── Palette ───────────────────────────────────────────────────────────────────
+teal       <- "#003B4F"
+teal_mid   <- "#0E5C72"
+teal_soft  <- "#3E7E91"
+sky        <- "#7EC8E3"
+amber      <- "#C77B30"
+key_tint   <- "#F1F7F8"
+panel_fill <- "#F7FAFB"
+line_cool  <- "#CADDE2"
+hair       <- "#EEF3F4"
+ink        <- "#16272D"
+body_c     <- "#3C4A4F"
+muted_c    <- "#7A848A"
+track      <- "#E4ECEE"
 
+# ── Generic helpers ───────────────────────────────────────────────────────────
 fmt_val <- function(x, digits = 1, suffix = "", big_mark = "") {
   if (length(x) == 0 || is.na(x)) return("—")
   if (is.numeric(x) && !is.finite(x)) return("—")
@@ -78,11 +92,11 @@ col_val <- function(data, col) {
 oz_color <- function(cls) {
   dplyr::case_when(
     grepl("Likely to attract",   cls, ignore.case = TRUE) &
-      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "#2a7f46",
-    grepl("More likely",         cls, ignore.case = TRUE) ~ "#0072b5",
-    grepl("Less likely",         cls, ignore.case = TRUE) ~ "#e07b39",
-    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "#c0392b",
-    TRUE ~ "#888888"
+      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "#15705A",
+    grepl("More likely",         cls, ignore.case = TRUE) ~ "#2F8FB0",
+    grepl("Less likely",         cls, ignore.case = TRUE) ~ "#D98A3D",
+    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "#B4532E",
+    TRUE ~ "#9AA3A8"
   )
 }
 
@@ -97,190 +111,287 @@ oz_class_short <- function(cls) {
   )
 }
 
-# ── Typst content helpers ─────────────────────────────────────────────────────
+# ── Typst building blocks ─────────────────────────────────────────────────────
 
-# Full-width dark section header block.
-panel_hdr <- function(title) {
-  sprintf(
-    '#block(width: 100%%, fill: rgb("#003b4f"), inset: (x: 5pt, y: 5pt))[#text(fill: white, weight: "bold", size: 7.5pt)[%s]]',
-    title
+# Horizontal progress bar — pure paste0, no sprintf %
+tbar <- function(pct_val, bar_color, h = "4pt", r = "2pt") {
+  if (is.null(pct_val) || is.na(pct_val) || !is.finite(as.numeric(pct_val))) {
+    return(paste0('#block(width: 100%, height: ', h, ', fill: rgb("', track, '"), radius: ', r, ')[]'))
+  }
+  fp  <- min(max(as.numeric(pct_val), 0), 100)
+  fpp <- paste0(format(round(fp, 1), nsmall = 1), "%")   # e.g. "34.7%"
+  paste0(
+    '#block(width: 100%, height: ', h, ', fill: rgb("', track, '"), radius: ', r, ')',
+    '[#block(width: ', fpp, ', height: ', h, ', fill: rgb("', bar_color, '"), radius: ', r, ')[]]'
   )
 }
 
-# Metric row: muted label (left) + semibold value (right).
+# Panel section header: teal uppercase + cool hairline
+phdr <- function(label) {
+  paste0(
+    '#block(width: 100%, inset: (x: 6pt, top: 4pt, bottom: 0pt), below: 0pt)',
+    '[#text(fill: rgb("', teal, '"), weight: "bold", size: 7pt, tracking: 0.6pt)[',
+    toupper(label), ']]',
+    '#v(1pt)',
+    '#line(length: 100%, stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt))'
+  )
+}
+
+# KV row: label left / value right, hairline below
 mkv <- function(label, value) {
-  sprintf(
-    '#block(inset: (x: 5pt, y: 5.5pt))[#grid(columns: (1fr, auto))[#text(fill: rgb("#666666"), size: 7pt)[%s]][#text(size: 9pt, weight: "semibold")[%s]]]',
-    label, value
+  paste0(
+    '#block(inset: (x: 6pt, y: 2.5pt), width: 100%)',
+    '[#grid(columns: (1fr, auto), gutter: 2pt,',
+    '[#text(fill: rgb("', body_c, '"), size: 6.5pt)[', label, ']],',
+    '[#text(fill: rgb("', ink,    '"), size: 8pt, weight: "semibold")[', value, ']])]',
+    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))'
   )
 }
 
-# Metric row with horizontal progress bar below the label/value.
-mbar <- function(label, value, pct, bar_color = "#0072b5") {
-  if (is.na(pct) || !is.finite(as.numeric(pct))) return(mkv(label, value))
-  fp <- min(max(as.numeric(pct), 0), 100)
-  sprintf(
-    '#block(inset: (x: 5pt, y: 5.5pt))[#grid(columns: (1fr, auto))[#text(fill: rgb("#666666"), size: 7pt)[%s]][#text(size: 9pt, weight: "semibold")[%s]]#v(2pt)#block(width: 100%%, height: 3pt, fill: rgb("#e8f4f8"), radius: 1.5pt)[#block(width: %.1f%%, height: 3pt, fill: rgb("%s"), radius: 1.5pt)[]]]',
-    label, value, fp, bar_color
+# KV row with bar below label/value
+mkv_bar <- function(label, value, bar_pct, bar_color = teal) {
+  paste0(
+    '#block(inset: (x: 6pt, top: 2pt, bottom: 1pt), width: 100%)',
+    '[#grid(columns: (1fr, auto), gutter: 2pt,',
+    '[#text(fill: rgb("', body_c, '"), size: 6.5pt)[', label, ']],',
+    '[#text(fill: rgb("', ink,    '"), size: 8pt, weight: "semibold")[', value, ']])',
+    '#v(1.5pt)', tbar(bar_pct, bar_color), ']',
+    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))'
   )
 }
 
-# Hero stat block for Zone 2 key-metric grid.
-# bar_pct: NULL for no bar; numeric 0-100 for a progress bar.
-hero_stat <- function(value_str, label, bar_pct = NULL, bar_color = "#0072b5") {
-  bar_lines <- if (!is.null(bar_pct) && !is.na(bar_pct) && is.finite(as.numeric(bar_pct))) {
-    fp <- min(max(as.numeric(bar_pct), 0), 100)
-    sprintf(
-      '#v(4pt)#block(width: 2.2in, height: 4pt, fill: rgb("#e8f4f8"), radius: 2pt)[#block(width: %.1f%%, height: 4pt, fill: rgb("%s"), radius: 2pt)[]]#v(3pt)',
-      fp, bar_color
+# Panel box wrapper: panel-fill background, cool border, 5pt radius
+panel_box <- function(header_str, body_str) {
+  paste0(
+    '#block(fill: rgb("', panel_fill, '"), ',
+    'stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt), ',
+    'radius: 5pt, inset: 0pt, clip: true, width: 100%)',
+    '[', header_str, body_str, ']'
+  )
+}
+
+# Key measure card for the Four Key Measures band
+key_card <- function(top_color, label_upper, value_str, unit_str, bar_pct_val, caption_str, bar_color) {
+  fp  <- if (!is.null(bar_pct_val) && !is.na(bar_pct_val) && is.finite(as.numeric(bar_pct_val)))
+           min(max(as.numeric(bar_pct_val), 0), 100) else NULL
+  bar_t <- if (!is.null(fp)) {
+    fpp <- paste0(format(round(fp, 1), nsmall = 1), "%")
+    paste0(
+      '#block(width: 100%, height: 4pt, fill: rgb("', track, '"), radius: 2pt)',
+      '[#block(width: ', fpp, ', height: 4pt, fill: rgb("', bar_color, '"), radius: 2pt)[]]'
     )
   } else {
-    "#v(6pt)"
+    paste0('#block(width: 100%, height: 4pt, fill: rgb("', track, '"), radius: 2pt)[]')
   }
-  paste0(
-    sprintf('#text(size: 16pt, weight: "bold")[%s]', value_str),
-    bar_lines,
-    sprintf('\n#text(size: 6.5pt, fill: rgb("#666666"))[%s]', label)
-  )
-}
+  unit_t <- if (nchar(unit_str) > 0)
+    paste0('#h(2pt)#text(fill: rgb("', body_c, '"), size: 9pt)[', unit_str, ']')
+  else ""
 
-# Assemble a panel: header + rows vector joined, no wrapping brackets.
-panel <- function(title, rows_vec) {
-  paste0(c(panel_hdr(title), rows_vec), collapse = "\n")
+  paste0(
+    '#block(fill: rgb("', key_tint, '"), stroke: 0.75pt + rgb("', line_cool, '"), ',
+    'radius: 5pt, inset: 0pt, clip: true, width: 100%)',
+    '[#block(height: 3pt, width: 100%, fill: rgb("', top_color, '"))[]',
+    '#block(inset: (x: 6pt, top: 4pt, bottom: 5pt), width: 100%)',
+    '[#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']',
+    '#v(2pt)',
+    '#text(fill: rgb("', ink, '"), size: 21pt, weight: "bold")[', value_str, ']',
+    unit_t,
+    '#v(3pt)',
+    bar_t,
+    '#v(3pt)',
+    '#text(fill: rgb("', muted_c, '"), size: 6.5pt)[', caption_str, ']',
+    ']]'
+  )
 }
 
 # ── Per-tract page generator ──────────────────────────────────────────────────
-
 tract_page <- function(tract, map_path, is_first) {
-  g  <- function(col)                       col_val(tract, col)
-  fv <- function(col, d = 1, s = "", m = "") fmt_val(g(col), d, s, m)
+  g  <- function(col)                          col_val(tract, col)
+  fv <- function(col, d = 1, s = "", m = "")  fmt_val(g(col), d, s, m)
 
   county_str <- as.character(g("county"))
   geoid_str  <- as.character(g("GEOID"))
+  acres_str  <- fv("total_acres", 0, m = ",")
 
-  oz_cls_raw <- if (is.na(g("oztoolclassification"))) NA_character_
-                else as.character(g("oztoolclassification"))
-  oz_badge   <- if (is.na(oz_cls_raw)) {
-    '#text(fill: rgb("#888888"), size: 6.5pt)[—]'
-  } else {
-    sprintf(
-      '#box(fill: rgb("%s"), radius: 2pt, inset: (x: 4pt, y: 2pt))[#text(fill: white, size: 6.5pt, weight: "bold")[%s]]',
-      oz_color(oz_cls_raw),
-      oz_class_short(oz_cls_raw)
-    )
-  }
+  oz_cls_raw    <- if (is.na(g("oztoolclassification"))) NA_character_
+                   else as.character(g("oztoolclassification"))
+  oz_fill       <- if (is.na(oz_cls_raw)) paste0('"', muted_c, '"')
+                   else paste0('"', oz_color(oz_cls_raw), '"')
+  oz_lbl        <- if (is.na(oz_cls_raw)) "N/A" else oz_class_short(oz_cls_raw)
+
+  mfi_raw <- g("mfi")
+  mfi_str <- if (is.na(mfi_raw) || !is.finite(as.numeric(mfi_raw))) "—"
+             else paste0("\\$", format(as.integer(mfi_raw), big.mark = ",", scientific = FALSE))
 
   pvrty_str <- if (is.na(g("pvrty_r"))) "—" else as.character(g("pvrty_r"))
   unmpl_str <- if (is.na(g("unmpl_r"))) "—" else as.character(g("unmpl_r"))
-  mfi_str   <- if (is.na(g("mfi")))     "—"
-               else format(as.integer(g("mfi")), big.mark = ",", scientific = FALSE)
 
   pb <- if (!is_first) "#pagebreak()\n" else ""
 
-  # ── Zone 2: hero stat blocks ───────────────────────────────────────────────
-  h_pop   <- hero_stat(fv("pop",          0, m = ","), "Population")
-  h_hh    <- hero_stat(fv("hh",           0, m = ","), "Households")
-  h_acres <- hero_stat(fv("total_acres",  1),           "Total Acres")
-  h_oz1   <- hero_stat(fv("oz1_pct",      1, "%"),      "OZ 1.0 %")
-  h_ato   <- hero_stat(fv("ato_composite",        1),   "ATO Score (0–100)",
-                       bar_pct   = g("ato_composite"),
-                       bar_color = "#0072b5")
-  h_muc   <- hero_stat(fv("wc_muc_pct",           1, "%"), "MUorC Coverage",
-                       bar_pct   = g("wc_muc_pct"),
-                       bar_color = "#2a7f46")
-  h_sap   <- hero_stat(fv("sap_planned_hh_per_acre", 2), "SAP HH/Acre")
-  h_eru   <- hero_stat(fv("eru_per_acre",            2), "ERU/Acre (2027–37)")
+  proj_root <- gsub("\\\\", "/", normalizePath(getwd()))
+  map_abs   <- gsub("\\\\", "/", normalizePath(map_path))
+  map_fwd   <- sub(paste0("^", proj_root, "/?"), "", map_abs)
 
-  # ── Zone 3: panel contents ─────────────────────────────────────────────────
-  centers_panel <- panel("Centers (% of Tract)", c(
-    mbar("Metropolitan Ctr", fv("wc_pct_metropolitan_center", 1, "%"), g("wc_pct_metropolitan_center")),
-    mbar("Urban Ctr",        fv("wc_pct_urban_center",        1, "%"), g("wc_pct_urban_center")),
-    mbar("City Ctr",         fv("wc_pct_city_center",         1, "%"), g("wc_pct_city_center")),
-    mbar("Neighborhood Ctr", fv("wc_pct_neighborhood_center", 1, "%"), g("wc_pct_neighborhood_center")),
-    mbar("Employment Dist.", fv("wc_pct_employment_district", 1, "%"), g("wc_pct_employment_district")),
-    mbar("Industrial Dist.", fv("wc_pct_industrial_district", 1, "%"), g("wc_pct_industrial_district")),
-    mbar("Retail Dist.",     fv("wc_pct_retail_district",     1, "%"), g("wc_pct_retail_district"))
-  ))
-
-  housing_ui_panel <- panel("Housing & Demographics", c(
-    mkv("Total Units",    fv("units_total",     0, m = ",")),
-    mkv("Res. Acres",     fv("res_acres_total", 1)),
-    mkv("SFD Acres",      fv("res_acres_sfd",   1)),
-    mkv("MF/SFA Acres",   fv("res_acres_mf_sfa",1)),
-    '#v(3pt)#line(length: 100%, stroke: (paint: rgb("#dddddd"), thickness: 0.5pt))#v(3pt)',
-    mkv("Poverty Rate",         pvrty_str),
-    mkv("Unemp. Rate",          unmpl_str),
-    mkv("Median Family Income", mfi_str)
-  ))
-
-  transit_panel <- panel("Transit", c(
-    mkv("Rail/BRT Stops",     fv("transit_stop_count", 0)),
-    mkv("SAP Acres",          fv("sap_acres",          1)),
-    mbar("SAP %",             fv("sap_pct",            1, "%"), g("sap_pct")),
-    mkv("ATO Jobs (Transit)", fv("ato_jobtransit",     0, m = ",")),
-    mkv("ATO HHs (Transit)",  fv("ato_hhtransit",      0, m = ","))
-  ))
-
-  auto_panel <- panel("Auto Access", c(
-    mkv("Freeway Exits",   fv("freeway_exit_count", 0)),
-    mkv("ATO Jobs (Auto)", fv("ato_jobauto",        0, m = ",")),
-    mkv("ATO HHs (Auto)",  fv("ato_hhauto",         0, m = ","))
-  ))
-
-  growth_panel <- panel("Projected Growth 2027–37", c(
-    mkv("HHs Added",  fv("hh_added",   0, m = ",")),
-    mkv("Pop. Added", fv("pop_added",  0, m = ",")),
-    mkv("Jobs Added", fv("jobs_added", 0, m = ",")),
-    mkv("ERU Added",  fv("eru_added",  0, m = ",")),
-    mkv("ERU/Acre",   fv("eru_per_acre",2))
-  ))
-
-  # ── Assemble Typst output ─────────────────────────────────────────────────
-  lines <- c(
-    pb,
-
-    # Header band
-    sprintf(
-      '#block(width: 100%%, fill: rgb("#003b4f"), inset: (x: 0.15in, y: 0.1in))[#grid(columns: (1fr, auto))[#text(fill: white, weight: "bold", size: 9pt)[%s County — Tract %s]][#align(right)[%s]]]',
-      county_str, geoid_str, oz_badge
-    ),
-    '#line(length: 100%, stroke: (paint: rgb("#7ec8e3"), thickness: 1.5pt))',
-    "#v(0.04in)",
-
-    # Zone 2: map (4.8in × 3.2in) | hero stats (2×4 grid)
-    "#grid(columns: (4.8in, 1fr), rows: (3.2in,), gutter: 0.15in,",
-    sprintf('  [#image("%s", width: 100%%)],', map_path),
-    "  [#block(height: 100%)[#grid(",
-    "    columns: (1fr, 1fr), rows: (1fr, 1fr, 1fr, 1fr),",
-    "    gutter: 0.08in, align: center + horizon,",
-    paste0("    [", h_pop,   "], [", h_hh,  "],"),
-    paste0("    [", h_acres, "], [", h_oz1, "],"),
-    paste0("    [", h_ato,   "], [", h_muc, "],"),
-    paste0("    [", h_sap,   "], [", h_eru, "]"),
-    "  )]]",
-    ")",
-
-    "#v(0.10in)",
-
-    # Zone 3: 5 panels
-    "#grid(columns: (1fr, 1fr, 1fr, 1fr, 1fr), gutter: 0.1in,",
-    paste0("  [", centers_panel,    "],"),
-    paste0("  [", housing_ui_panel, "],"),
-    paste0("  [", transit_panel,    "],"),
-    paste0("  [", auto_panel,       "],"),
-    paste0("  [", growth_panel,     "]"),
-    ")",
-
-    "#v(0.04in)",
-    '#line(length: 100%, stroke: (paint: rgb("#dddddd"), thickness: 0.5pt))',
-    "#v(1pt)",
-    '#align(right)[#text(size: 5.5pt, fill: rgb("#888888"))[Sources: Federal OZ 2.0 eligibility, Urban Institute, WFRC/MAG regional data. Growth projections 2027–2037. ATO = Access to Opportunities.]]'
+  # ── Header band ──────────────────────────────────────────────────────────────
+  hdr_left <- paste0(
+    '#rect(fill: white, inset: (x: 5pt, y: 4pt), radius: 2pt)',
+    '[#text(fill: rgb("', teal, '"), weight: "bold", size: 6pt)[WFRC#linebreak()MAG]]',
+    '#h(0.1in)',
+    '#text(fill: white, weight: "bold", size: 15pt)[', county_str, ' County]',
+    '#text(fill: rgb("', sky,  '"), size: 8pt)[ · Opportunity Zone 2.0]',
+    '#linebreak()',
+    '#text(fill: rgb("', sky,  '"), size: 7pt)[Census Tract ', geoid_str,
+    ' · ', acres_str, ' acres]'
+  )
+  hdr_right <- paste0(
+    '#align(right)',
+    '[#text(fill: rgb("', sky, '"), size: 5.5pt, tracking: 1pt)[INVESTMENT LIKELIHOOD]',
+    '#linebreak()#v(3pt)',
+    '#box(fill: rgb(', oz_fill, '), radius: 3pt, inset: (x: 8pt, y: 4pt))',
+    '[#text(fill: white, weight: "bold", size: 8pt)[', oz_lbl, ']]',
+    '#linebreak()#v(2pt)',
+    '#text(fill: rgb("', sky, '"), size: 5.5pt)[Urban Institute OZ Tool]',
+    ']'
+  )
+  hdr_band <- paste0(
+    '#block(width: 100%, fill: rgb("', teal, '"), inset: (x: 0.15in, y: 0.06in), below: 0pt)',
+    '[#grid(columns: (1fr, auto), gutter: 0.12in, align: left + top,',
+    '[', hdr_left, '],[', hdr_right, '])]'
   )
 
-  paste0(lines, collapse = "\n")
+  sky_rule <- paste0(
+    '#line(length: 100%, stroke: (paint: rgb("', sky, '"), thickness: 1.5pt))'
+  )
+
+  # ── Four Key Measures band ────────────────────────────────────────────────────
+  muc_pct <- g("wc_muc_pct")
+  ato_val <- g("ato_composite")
+  sap_val <- g("sap_planned_hh_per_acre")
+  eru_val <- g("eru_per_acre")
+
+  sap_bar <- if (!is.na(sap_val) && is.finite(sap_val)) min(sap_val / 35 * 100, 100) else NA_real_
+  eru_bar <- if (!is.na(eru_val) && is.finite(eru_val)) min(eru_val / 10 * 100, 100) else NA_real_
+
+  c1 <- key_card(teal,      "MUORC CENTER COVERAGE",    fv("wc_muc_pct", 1),              "%",     muc_pct, "% of tract in metro / urban / city center", teal)
+  c2 <- key_card(teal_mid,  "ACCESS TO OPPORTUNITIES",  fv("ato_composite", 1),            "/100",  ato_val, "composite drive + transit index",           teal_mid)
+  c3 <- key_card(teal_soft, "SAP PLANNED HOUSING",      fv("sap_planned_hh_per_acre", 1),  "HH/ac", sap_bar, "station area plan, planned units",          teal_soft)
+  c4 <- key_card(amber,     "PROJECTED GROWTH 2027-37", fv("eru_per_acre", 1),             "ERU/ac",eru_bar, "equivalent residential units added",        amber)
+
+  fkm <- paste0(
+    '#text(fill: rgb("', amber, '"), weight: "bold", size: 6.5pt, tracking: 1.4pt)[FOUR KEY MEASURES]',
+    '#v(2pt)',
+    '#grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 0.08in,',
+    '[', c1, '],[', c2, '],[', c3, '],[', c4, '])'
+  )
+
+  # ── Col 2: Tract Profile panel ────────────────────────────────────────────────
+  kv2 <- function(l1, v1, l2, v2) {
+    paste0(
+      '#grid(columns: (1fr, 1fr), gutter: 0pt,',
+      '[', mkv(l1, v1), '],[', mkv(l2, v2), '])'
+    )
+  }
+  profile_body <- paste0(
+    kv2("Population",      fv("pop",         0, m = ","),
+        "Households",      fv("hh",          0, m = ",")),
+    kv2("Total acres",     fv("total_acres", 1),
+        "Developable",     fv("dev_acres",   1)),
+    kv2("OZ 1.0 overlap",  paste0(fv("oz1_acres", 1), " ac"),
+        "OZ 1.0 % of tract", fv("oz1_pct",  1, "%"))
+  )
+  profile_panel <- panel_box(phdr("TRACT PROFILE"), profile_body)
+
+  # ── Col 2: Centers & Districts panel ──────────────────────────────────────────
+  center_defs <- list(
+    list(col = "wc_pct_metropolitan_center", lbl = "Metropolitan Ctr", clr = "#bc5f8c"),
+    list(col = "wc_pct_urban_center",        lbl = "Urban Ctr",        clr = "#ec8369"),
+    list(col = "wc_pct_city_center",         lbl = "City Ctr",         clr = "#f5b86e"),
+    list(col = "wc_pct_neighborhood_center", lbl = "Neighborhood Ctr", clr = "#fae55c"),
+    list(col = "wc_pct_employment_district", lbl = "Employment Dist.",  clr = "#d4a5c9"),
+    list(col = "wc_pct_industrial_district", lbl = "Industrial Dist.",  clr = "#b8a8d8"),
+    list(col = "wc_pct_retail_district",     lbl = "Retail Dist.",      clr = "#f4b8bb")
+  )
+  centers_body <- paste0(
+    mkv_bar("MUorC total (Metro + Urban + City)", fv("wc_muc_pct", 1, "%"), muc_pct, teal),
+    paste0(vapply(center_defs, function(d) {
+      mkv_bar(d$lbl, fv(d$col, 1, "%"), g(d$col), d$clr)
+    }, character(1)), collapse = "")
+  )
+  centers_panel <- panel_box(phdr("CENTERS & DISTRICTS (% OF TRACT)"), centers_body)
+
+  # ── Col 3: Housing panel ──────────────────────────────────────────────────────
+  housing_body <- paste0(
+    mkv("Total units",    fv("units_total",     0, m = ",")),
+    mkv("Res. acres",     fv("res_acres_total", 1)),
+    mkv("SFD acres",      fv("res_acres_sfd",   1)),
+    mkv("MF / SFA acres", fv("res_acres_mf_sfa",1)),
+    '#block(height: 2pt)[]',
+    '#line(length: 100%, stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt))',
+    mkv("Poverty rate",          pvrty_str),
+    mkv("Unemployment",          unmpl_str),
+    mkv("Median family income",  mfi_str)
+  )
+  housing_panel <- panel_box(phdr("HOUSING & DEMOGRAPHICS"), housing_body)
+
+  # ── Col 3: Transit panel ──────────────────────────────────────────────────────
+  transit_body <- paste0(
+    mkv("Rail / BRT stops",   fv("transit_stop_count", 0)),
+    mkv("SAP acres",          fv("sap_acres",          1)),
+    mkv_bar("SAP % of tract", fv("sap_pct", 1, "%"), g("sap_pct"), teal_soft),
+    mkv("ATO jobs (transit)", fv("ato_jobtransit", 0, m = ",")),
+    mkv("ATO HHs (transit)",  fv("ato_hhtransit",  0, m = ","))
+  )
+  transit_panel <- panel_box(phdr("TRANSIT"), transit_body)
+
+  # ── Col 3: Auto Access panel ──────────────────────────────────────────────────
+  auto_body <- paste0(
+    mkv("Freeway exits",   fv("freeway_exit_count", 0)),
+    mkv("ATO jobs (auto)", fv("ato_jobauto", 0, m = ",")),
+    mkv("ATO HHs (auto)",  fv("ato_hhauto",  0, m = ","))
+  )
+  auto_panel <- panel_box(phdr("AUTO ACCESS"), auto_body)
+
+  # ── Col 3: Projected Growth panel ─────────────────────────────────────────────
+  growth_body <- paste0(
+    mkv("Households added", fv("hh_added",   0, m = ",")),
+    mkv("Population added", fv("pop_added",  0, m = ",")),
+    mkv("Jobs added",       fv("jobs_added", 0, m = ",")),
+    mkv("ERU added",        fv("eru_added",  0, m = ",")),
+    mkv_bar("ERU / acre",   fv("eru_per_acre", 2), eru_bar, amber)
+  )
+  growth_panel <- panel_box(phdr("PROJECTED GROWTH 2027-37"), growth_body)
+
+  # ── Col 3: transit+auto side-by-side grid ────────────────────────────────────
+  transit_auto <- paste0(
+    '#grid(columns: (1fr, 1fr), gutter: 0.08in,',
+    '[', transit_panel, '],[', auto_panel, '])'
+  )
+
+  # ── Footer ────────────────────────────────────────────────────────────────────
+  footer <- paste0(
+    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))',
+    '#v(1pt)',
+    '#grid(columns: (1fr, auto), gutter: 4pt,',
+    '[#text(fill: rgb("', muted_c, '"), size: 5.5pt)',
+    '[Sources: Federal OZ 2.0 eligibility, Urban Institute OZ Tool, WFRC/MAG regional data. Growth projections 2027-2037.]],',
+    '[#text(fill: rgb("', muted_c, '"), size: 5.5pt)',
+    '[ATO = Access to Opportunities · ERU = Equiv. Residential Unit · SAP = Station Area Plan · MUorC = Metro/Urban/City Center]])'
+  )
+
+  # ── Assemble full page ────────────────────────────────────────────────────────
+  main_grid <- paste0(
+    '#grid(columns: (3.6in, 3.0in, 1fr), gutter: 0.12in, align: top,',
+    '[#image("', map_fwd, '", width: 100%)],',
+    '[#stack(dir: ttb, spacing: 0.06in,',
+    '[', profile_panel, '],[', centers_panel, '])],',
+    '[#stack(dir: ttb, spacing: 0.06in,',
+    '[', housing_panel, '],[', transit_auto, '],[', growth_panel, '])])'
+  )
+
+  paste0(c(pb, hdr_band, sky_rule, "#v(2pt)", fkm, "#v(0.07in)", main_grid, "#v(0.03in)", footer), collapse = "\n")
 }
 
-# ── Emit one raw Typst block per tract ───────────────────────────────────────
+# ── Emit one Typst block per tract ────────────────────────────────────────────
 for (i in seq_len(nrow(county_data))) {
   tract <- county_data[i, ]
   geoid <- as.character(tract$GEOID)

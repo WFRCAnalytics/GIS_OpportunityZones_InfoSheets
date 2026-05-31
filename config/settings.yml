@@ -7,3 +7,4 @@ crs_analysis: 26912  # NAD83 / UTM Zone 12N — meters, correct for Utah area ca
 output_dir: "output"
 map_width_in: 3
 map_height_in: 2
+detail_map_height_in: 4.6

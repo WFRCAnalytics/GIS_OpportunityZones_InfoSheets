@@ -4,191 +4,535 @@ params:
   data_dir: "data/remotes"
 format:
   typst:
-    margin:
-      x: 0.4in
-      y: 0.35in
     fontsize: 8pt
+    keep-typ: false
 ---
 
 ```{=typst}
-#set page(flipped: true)
-#set text(font: "Poppins", size: 8pt)
+#set text(font: "Poppins", size: 8pt, number-type: "lining", number-width: "tabular")
+#show table.cell: set block(breakable: false)
 ```
 
 ```{r}
 #| label: setup
 #| include: false
-library(ggplot2)
 library(dplyr)
-library(purrr)
 library(yaml)
 
-settings    <- yaml::read_yaml("config/settings.yml")
+settings <- yaml::read_yaml("config/settings.yml")
 report_data <- readRDS(file.path(params$data_dir, "report_data.rds"))
-tract_maps  <- readRDS(file.path(params$data_dir, "tract_maps.rds"))
 
 county_data <- dplyr::filter(report_data, county == params$county) |>
   dplyr::arrange(GEOID)
-
-county_maps <- tract_maps[county_data$GEOID]
 ```
 
 ```{r}
-#| label: save-maps
-#| include: false
-map_dir <- file.path(params$data_dir, "map_cache")
-dir.create(map_dir, showWarnings = FALSE)
-
-map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
-  path <- file.path(map_dir, paste0(geoid, ".png"))
-  ggplot2::ggsave(
-    filename = path,
-    plot     = map,
-    width    = settings$map_width_in,
-    height   = settings$map_height_in,
-    dpi      = 200,
-    bg       = "white"
-  )
-  path
-})
-```
-
-```{r}
-#| label: pages
+#| label: table
 #| results: asis
 #| echo: false
+#| warning: false
+# ── Palette ───────────────────────────────────────────────────────────────────
+teal <- "#003B4F"
+teal_mid <- "#0E5C72"
+teal_soft <- "#3E7E91"
+sky <- "#7EC8E3"
+amber <- "#C77B30"
+key_tint <- "#F1F7F8"
+line_cool <- "#CADDE2"
+hair <- "#EEF3F4"
+ink <- "#16272D"
+body_c <- "#3C4A4F"
+muted_c <- "#7A848A"
+track <- "#E4ECEE"
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
 fmt_val <- function(x, digits = 1, suffix = "", big_mark = "") {
-  if (length(x) == 0 || is.na(x)) return("—")
-  if (is.numeric(x) && !is.finite(x)) return("—")
+  if (length(x) == 0 || is.na(x)) {
+    return("—")
+  }
+  if (is.numeric(x) && !is.finite(x)) {
+    return("—")
+  }
   rounded <- round(x, digits)
   if (digits == 0 && nchar(big_mark) > 0) {
-    return(paste0(format(as.integer(rounded), big.mark = big_mark, scientific = FALSE), suffix))
+    return(paste0(
+      format(as.integer(rounded), big.mark = big_mark, scientific = FALSE),
+      suffix
+    ))
   }
   paste0(format(rounded, scientific = FALSE), suffix)
 }
 
+col_val <- function(data, col) {
+  if (col %in% names(data)) data[[col]] else NA_real_
+}
+
 oz_color <- function(cls) {
   dplyr::case_when(
-    grepl("Likely to attract",   cls, ignore.case = TRUE) &
-      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "#2a7f46",
-    grepl("More likely",         cls, ignore.case = TRUE) ~ "#0072b5",
-    grepl("Less likely",         cls, ignore.case = TRUE) ~ "#e07b39",
-    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "#c0392b",
-    TRUE ~ "#888888"
+    grepl("Likely to attract", cls, ignore.case = TRUE) &
+      !grepl("More|Less|Un", cls, ignore.case = TRUE) ~ "#15705A",
+    grepl("More likely", cls, ignore.case = TRUE) ~ "#2F8FB0",
+    grepl("Less likely", cls, ignore.case = TRUE) ~ "#D98A3D",
+    grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "#B4532E",
+    TRUE ~ "#9AA3A8"
   )
 }
 
 oz_class_short <- function(cls) {
   dplyr::case_when(
-    grepl("Likely to attract",   cls, ignore.case = TRUE) &
-      !grepl("More|Less|Un",     cls, ignore.case = TRUE) ~ "Likely",
-    grepl("More likely",         cls, ignore.case = TRUE) ~ "More Likely",
-    grepl("Less likely",         cls, ignore.case = TRUE) ~ "Less Likely",
+    grepl("Likely to attract", cls, ignore.case = TRUE) &
+      !grepl("More|Less|Un", cls, ignore.case = TRUE) ~ "Likely",
+    grepl("More likely", cls, ignore.case = TRUE) ~ "More Likely",
+    grepl("Less likely", cls, ignore.case = TRUE) ~ "Less Likely",
     grepl("Unlikely|not likely", cls, ignore.case = TRUE) ~ "Unlikely",
     TRUE ~ "Unknown"
   )
 }
 
-# ── Page header ──────────────────────────────────────────────────────────────
-cat("``` {=typst}\n")
-cat(sprintf(
-  '#block(width: 100%%, fill: rgb("#003b4f"), inset: (x: 0.15in, y: 0.06in))[#grid(columns: (1fr, auto))[#text(fill: white, weight: "bold", size: 9pt)[%s County — OZ 2.0 Eligible Tracts]][#align(right)[#text(fill: rgb("#7ec8e3"), size: 7pt)[Opportunity Zones Info Sheet | WFRC]]]]\n',
-  params$county
-))
-cat('#line(length: 100%, stroke: (paint: rgb("#7ec8e3"), thickness: 1.5pt))\n')
-cat('#v(0.06in)\n')
-
-# ── Summary table ─────────────────────────────────────────────────────────────
-# Columns: map | tract | profile | oz1 | wc | ato | sap | eru | oz_likelihood
-# Fixed widths sum to 10.20in (usable landscape width with x: 0.4in margins)
-cat('#table(\n')
-cat('  columns: (1.8in, 0.90in, 1.40in, 0.80in, 1.0in, 0.90in, 1.1in, 1.1in, 1.20in),\n')
-cat('  stroke: none,\n')
-cat('  fill: (col, row) => if row == 0 { rgb("#003b4f") } else if calc.odd(row) { rgb("#ddeef5") } else { white },\n')
-cat('  inset: (x: 5pt, y: 5pt),\n')
-cat('  align: (col, row) => if row == 0 { center + horizon } else if col <= 2 { left + top } else if col == 8 { center + top } else { right + top },\n')
-
-cat('  table.header(\n')
-header_labels <- c(
-  "Map",
-  "Tract GEOID",
-  "Tract Profile",
-  "OZ 1.0#linebreak()Acres / %",
-  "Wasatch Choice#linebreak()Center Coverage",
-  "Access to#linebreak()Opportunities#linebreak()Score (0–100)",
-  "Station Area Plan#linebreak()Housing (HH/Acre)",
-  "Projected Growth#linebreak()2027–37 (ERU/Acre)",
-  "OZ Investment#linebreak()Likelihood#linebreak()#[(Urban Institute)]"
-)
-for (lbl in header_labels) {
-  cat(sprintf('    [#text(fill: white, weight: "bold", size: 7pt)[%s]],\n', lbl))
+# In-cell bar: number + thin bar below; widths use format() not sprintf to avoid % issues
+cell_bar <- function(num_str, bar_pct_val, bar_color) {
+  track_bar <- paste0(
+    '#block(width: 100%, height: 3pt, fill: rgb("',
+    track,
+    '"), radius: 1.5pt)'
+  )
+  if (
+    is.null(bar_pct_val) ||
+      is.na(bar_pct_val) ||
+      !is.finite(as.numeric(bar_pct_val))
+  ) {
+    return(paste0(
+      '#text(size: 9pt, weight: "semibold")[',
+      num_str,
+      ']#v(2pt)',
+      track_bar,
+      '[]'
+    ))
+  }
+  fp <- min(max(as.numeric(bar_pct_val), 0), 100)
+  fpp <- paste0(format(round(fp, 1), nsmall = 1), "%")
+  paste0(
+    '#text(size: 9pt, weight: "semibold")[',
+    num_str,
+    ']',
+    '#v(2pt)',
+    track_bar,
+    '[#block(width: ',
+    fpp,
+    ', height: 3pt, fill: rgb("',
+    bar_color,
+    '"), radius: 1.5pt)[]]'
+  )
 }
+
+# Short tract label from GEOID last 6 digits
+tract_label <- function(geoid) {
+  sfx <- substr(as.character(geoid), 6, 11)
+  base <- as.integer(substr(sfx, 1, 4))
+  dec <- substr(sfx, 5, 6)
+  if (dec == "00") paste0("Tract ", base) else paste0("Tract ", base, ".", dec)
+}
+
+# ── Column maxima for relative bar scaling ────────────────────────────────────
+safe_max <- function(x) {
+  v <- suppressWarnings(max(x, na.rm = TRUE))
+  if (!is.finite(v) || v == 0) NA_real_ else v
+}
+col_max <- list(
+  oz1_pct = safe_max(county_data$oz1_pct),
+  muc = safe_max(county_data$wc_muc_pct),
+  ato = safe_max(county_data$ato_composite),
+  sap = safe_max(county_data$sap_planned_hh_per_acre),
+  eru = safe_max(county_data$eru_per_acre)
+)
+rel_pct <- function(val, mx) {
+  if (is.na(val) || !is.finite(val) || is.na(mx)) {
+    NA_real_
+  } else {
+    min(val / mx * 100, 100)
+  }
+}
+
+n_tracts <- nrow(county_data)
+county_name <- params$county
+
+# ── OZ legend swatches (pure paste0, no %%) ──────────────────────────────────
+legend_swatches <- paste0(
+  '#box(fill: rgb("#2F8FB0"), radius: 2pt, inset: (x: 5pt, y: 2pt))',
+  '[#text(fill: white, size: 7pt)[More Likely]]#h(4pt)',
+  '#box(fill: rgb("#15705A"), radius: 2pt, inset: (x: 5pt, y: 2pt))',
+  '[#text(fill: white, size: 7pt)[Likely]]#h(4pt)',
+  '#box(fill: rgb("#D98A3D"), radius: 2pt, inset: (x: 5pt, y: 2pt))',
+  '[#text(fill: white, size: 7pt)[Less Likely]]',
+  '#h(1fr)',
+  '#text(fill: rgb("',
+  muted_c,
+  '"), size: 7pt)',
+  '[Bars show value relative to column maximum · per-tract maps on detail sheets.]'
+)
+
+# ── Page setup: running header + footer via #set page ────────────────────────
+# NOTE: all % in paste0 are literal — no %% needed (that's only for sprintf)
+hdr_block <- paste0(
+  '#block(fill: rgb("',
+  teal,
+  '"), width: 100%, inset: (x: 0.15in, y: 0.14in), radius: 6pt)',
+  '[',
+  # Right panel: placed at right + horizon so it centers vertically within the block
+  # (block height is set by the left content; #place uses that height for centering)
+  '#place(right + horizon)',
+  '[#grid(columns: (auto, auto, auto), gutter: 10pt, align: horizon,',
+  # Sub-group 1: tract count (white) + ELIGIBLE TRACTS label (sky)
+  '[#stack(dir: ttb, spacing: 5pt,',
+  '[#text(fill: white, size: 20pt, weight: "bold")[',
+  n_tracts,
+  ']],',
+  '[#text(fill: rgb("',
+  sky,
+  '"), size: 5pt, weight: "semibold", tracking: 0.5pt)[ELIGIBLE TRACTS]]',
+  ')],',
+  # Thin vertical rule separator
+  '[#align(horizon)[#block(width: 0.5pt, height: 0.31in, fill: rgb("',
+  sky,
+  '").transparentize(35%))[]]]',
+  ',',
+  # Sub-group 2: current page (white large) + /total (sky smaller) on one line, PAGE label below
+  '[#stack(dir: ttb, spacing: 5pt,',
+  '[#context [#text(fill: white, weight: "bold", size: 12pt)[#counter(page).display()]',
+  '#text(fill: rgb("',
+  sky,
+  '"), weight: "semibold", size: 12pt)[/#counter(page).final().first()]]],',
+  '[#text(fill: rgb("',
+  sky,
+  '"), size: 5pt, weight: "semibold", tracking: 0.5pt)[PAGE]]',
+  ')]',
+  ')]', # closes inner right grid ) + #place content ]
+  # Left content: badge + county name/subtitle — determines block height
+  '#grid(columns: (auto, 1fr), gutter: 0.07in, align: left + horizon,',
+  '[#rect(fill: none, stroke: (paint: rgb("',
+  sky,
+  '"), thickness: 0.5pt), inset: (x: 6pt, y: 5pt), radius: 2pt)',
+  '[#align(center)[#text(fill: rgb("',
+  sky,
+  '"), weight: "bold", size: 6pt)[WFRC#linebreak()MAG]]]],',
+  '[#stack(dir: ttb, spacing: 10pt,',
+  '[#text(fill: white, weight: "bold", size: 16pt)[',
+  county_name,
+  ' County]],',
+  '[#text(fill: rgb("',
+  sky,
+  '"), size: 8pt)[Opportunity Zone 2.0 — Eligible Census Tracts]]',
+  ')]',
+  ')]' # closes left grid ) + outer block ]
+)
+
+legend_block <- paste0(
+  '#block(width: 100%, above: 10pt, inset: (x: 0.15in, y: 2pt))',
+  '[#box(inset: (y: 2pt))[#text(fill: rgb("',
+  amber,
+  '"), weight: "bold", size: 6pt, tracking: 1pt)[INVESTMENT LIKELIHOOD]]',
+  '#h(6pt)',
+  legend_swatches,
+  ']'
+)
+
+hdr_content <- paste0(
+  '#block(width: 100%, height: 0.28in)[]\n',
+  hdr_block,
+  '\n',
+  legend_block,
+  '\n',
+  '#block(width: 100%, height: 8pt, above: 0pt, below: 0pt)[]\n',
+  '#line(length: 100%, stroke: (paint: rgb("',
+  line_cool,
+  '"), thickness: 0.5pt))\n'
+)
+
+footer_content <- paste0(
+  '#line(length: 100%, stroke: (paint: rgb("',
+  line_cool,
+  '"), thickness: 0.5pt))',
+  '#v(1pt)',
+  '#grid(columns: (1fr, auto), gutter: 4pt,',
+  '[#text(fill: rgb("',
+  muted_c,
+  '"), size: 6pt)',
+  '[Sources: Federal OZ 2.0 eligibility, Urban Institute OZ Tool, WFRC/MAG regional data. Growth projections 2027-2037.]],',
+  '[#text(fill: rgb("',
+  muted_c,
+  '"), size: 6pt)',
+  '[ATO = Access to Opportunities · ERU = Equiv. Residential Unit · SAP = Station Area Plan · MUorC = Metro/Urban/City Center]])'
+)
+
+# Emit the #set page() block
+cat("``` {=typst}\n")
+cat(paste0(
+  '#set page(\n',
+  '  flipped: true,\n',
+  '  margin: (x: 0.4in, top: 1.32in, bottom: 0.5in),\n',
+  '  header-ascent: 0pt,\n',
+  '  footer-descent: 0pt,\n',
+  '  header: [',
+  hdr_content,
+  '],\n',
+  '  footer: [',
+  footer_content,
+  '],\n',
+  ')\n'
+))
+cat("```\n\n")
+
+# ── Two-tier table ────────────────────────────────────────────────────────────
+cat("``` {=typst}\n")
+
+# Resolve a color token: named Typst colors pass through; hex strings get rgb()
+typst_color <- function(c) {
+  if (c %in% c("white", "black")) c else paste0('rgb("', c, '")')
+}
+
+# Super-header cell builder
+grp_hdr <- function(label, colspan, bg, text_clr = "white") {
+  paste0(
+    'table.cell(colspan: ',
+    colspan,
+    ', fill: ',
+    typst_color(bg),
+    ', align: center + bottom)',
+    '[#text(fill: ',
+    typst_color(text_clr),
+    ', weight: "bold", size: 6pt, tracking: 0.5pt)[',
+    toupper(label),
+    ']]'
+  )
+}
+
+# Column header cell builder
+col_hdr <- function(label, bg = teal, fg = "white") {
+  paste0(
+    'table.cell(fill: ',
+    typst_color(bg),
+    ', align: center + bottom)',
+    '[#text(fill: ',
+    typst_color(fg),
+    ', weight: "bold", size: 7.5pt)[',
+    label,
+    ']]'
+  )
+}
+
+# Table declaration: 10 columns
+cat(paste0(
+  '#table(\n',
+  '  columns: (0.27in, 1.55in, 0.85in, 0.85in, 0.66in, 1fr, 1fr, 1fr, 1fr, 1.12in),\n',
+  '  stroke: none,\n',
+  '  inset: (x: 5pt, y: 5pt),\n',
+  '  fill: (col, row) => {\n',
+  '    if row > 1 {\n',
+  '      if col >= 5 and col <= 8 {\n',
+  '        if calc.odd(row) { rgb("',
+  key_tint,
+  '") } else { white }\n',
+  '      } else {\n',
+  '        if calc.odd(row) { rgb("',
+  hair,
+  '") } else { white }\n',
+  '      }\n',
+  '    }\n',
+  '  },\n',
+  '  align: (col, row) => {\n',
+  '    if row <= 1 { center + bottom }\n',
+  '    else if col == 0 { center + top }\n',
+  '    else if col == 1 { left + top }\n',
+  '    else if col == 9 { center + top }\n',
+  '    else { right + top }\n',
+  '  },\n'
+))
+
+# Two-tier table.header
+cat('  table.header(\n')
+# Row 0: super-headers
+cat(paste0('    ', grp_hdr("", 1, teal), ',\n'))
+cat(paste0('    ', grp_hdr("Identity", 1, teal), ',\n'))
+cat(paste0('    ', grp_hdr("Profile", 3, teal), ',\n'))
+# Four Key Measures super-header (amber text on key-tint bg)
+cat(paste0(
+  '    table.cell(colspan: 4, fill: rgb("',
+  key_tint,
+  '"), align: center + bottom)',
+  '[#text(fill: rgb("',
+  amber,
+  '"), weight: "bold", size: 6pt, tracking: 0.5pt)',
+  '[FOUR KEY MEASURES]],\n'
+))
+cat(paste0('    ', grp_hdr("", 1, teal), ',\n'))
+# Row 1: column headers
+cat(paste0('    ', col_hdr("\\#"), ',\n'))
+cat(paste0('    ', col_hdr("Tract"), ',\n'))
+cat(paste0('    ', col_hdr("Pop · HH"), ',\n'))
+cat(paste0('    ', col_hdr("Acres · Dev"), ',\n'))
+cat(paste0('    ', col_hdr("OZ 1.0 %"), ',\n'))
+cat(paste0(
+  '    ',
+  col_hdr("Wasatch Choice#linebreak()Centers (% Area)", key_tint, ink),
+  ',\n'
+))
+cat(paste0(
+  '    ',
+  col_hdr("Accessibility#linebreak()Score /100", key_tint, ink),
+  ',\n'
+))
+cat(paste0(
+  '    ',
+  col_hdr("Station Area Plan#linebreak()HH/ac", key_tint, ink),
+  ',\n'
+))
+cat(paste0(
+  '    ',
+  col_hdr("Projected 2027–37#linebreak()Growth ERU/ac", key_tint, ink),
+  ',\n'
+))
+cat(paste0('    ', col_hdr("Investment#linebreak()Likelihood"), ',\n'))
 cat('  ),\n')
 
 # ── Data rows ─────────────────────────────────────────────────────────────────
 for (i in seq_len(nrow(county_data))) {
   tract <- county_data[i, ]
   geoid <- as.character(tract$GEOID)
-  g     <- function(col) if (col %in% names(tract)) tract[[col]] else NA_real_
-  fv    <- function(col, d = 1, s = "", m = "") fmt_val(g(col), d, s, m)
+  g <- function(col) col_val(tract, col)
+  fv <- function(col, d = 1, s = "", m = "") fmt_val(g(col), d, s, m)
 
-  map_path_fwd <- gsub("\\\\", "/", map_paths[[geoid]])
-
-  # Col 1: Map
-  cat(sprintf('  [#image("%s", width: 100%%)],\n', map_path_fwd))
-
-  # Col 2: Tract ID
-  cat(sprintf('  [%s],\n', geoid))
-
-  # Col 3: Tract Profile (Pop, HH, Total Acres, Dev. Acres)
-  pop_str   <- fv("pop",        0, m = ",")
-  hh_str    <- fv("hh",         0, m = ",")
-  acres_str <- fv("total_acres", 1)
-  devac_str <- fv("dev_acres",  1)
+  # Col 1: running index (zero-padded)
   cat(paste0(
-    '  [#strong[Pop.:] ', pop_str,
-    ' #h(4pt) #strong[HH:] ', hh_str,
-    '#linebreak()#strong[Total Acres:] ', acres_str,
-    '#linebreak()#strong[Dev. Acres:] ', devac_str,
+    '  [#text(fill: rgb("',
+    muted_c,
+    '"), size: 7pt)[',
+    sprintf("%02d", i),
+    ']],\n'
+  ))
+
+  # Col 2: tract label + GEOID (mono muted)
+  pfx <- substr(geoid, 1, 5)
+  sfx <- substr(geoid, 6, 11)
+  cat(paste0(
+    '  [#text(weight: "semibold", size: 8pt)[',
+    tract_label(geoid),
+    ']',
+    '#linebreak()#text(fill: rgb("',
+    muted_c,
+    '"), size: 6pt)[',
+    pfx,
+    ' · ',
+    sfx,
+    ']],\n'
+  ))
+
+  # Col 3: Pop · HH (two lines)
+  cat(paste0(
+    '  [#text(weight: "semibold", size: 8pt)[',
+    fv("pop", 0, m = ","),
+    ']',
+    '#text(fill: rgb("',
+    muted_c,
+    '"), size: 6.5pt)[ pop]',
+    '#linebreak()#text(weight: "semibold", size: 8pt)[',
+    fv("hh", 0, m = ","),
+    ']',
+    '#text(fill: rgb("',
+    muted_c,
+    '"), size: 6.5pt)[ hh]],\n'
+  ))
+
+  # Col 4: Acres · Dev (two lines)
+  cat(paste0(
+    '  [#text(weight: "semibold", size: 8pt)[',
+    fv("total_acres", 0),
+    ']',
+    '#text(fill: rgb("',
+    muted_c,
+    '"), size: 6.5pt)[ ac]',
+    '#linebreak()#text(weight: "semibold", size: 8pt)[',
+    fv("dev_acres", 0),
+    ']',
+    '#text(fill: rgb("',
+    muted_c,
+    '"), size: 6.5pt)[ dev]],\n'
+  ))
+
+  # Col 5: OZ 1.0 %
+  cat(paste0(
+    '  [',
+    cell_bar(
+      fv("oz1_pct", 1, "%"),
+      rel_pct(g("oz1_pct"), col_max$oz1_pct),
+      teal_soft
+    ),
     '],\n'
   ))
 
-  # Col 4: OZ 1.0 (acres on line 1, pct on line 2)
+  # Col 6: MUorC % (teal bar)
   cat(paste0(
-    '  [', fv("oz1_acres", 1), ' ac#linebreak()',
-    fv("oz1_pct", 1, "%"), '],\n'
+    '  [',
+    cell_bar(
+      fv("wc_muc_pct", 1, "%"),
+      rel_pct(g("wc_muc_pct"), col_max$muc),
+      teal
+    ),
+    '],\n'
   ))
 
-  # Col 5: Wasatch Choice Center Coverage (plain number)
-  cat(paste0('  [', fv("wc_muc_pct", 1, "%"), '],\n'))
+  # Col 7: ATO /100 (teal-mid bar)
+  cat(paste0(
+    '  [',
+    cell_bar(
+      fv("ato_composite", 1),
+      rel_pct(g("ato_composite"), col_max$ato),
+      teal_mid
+    ),
+    '],\n'
+  ))
 
-  # Col 6: Access to Opportunities Score (plain number)
-  cat(paste0('  [', fv("ato_composite", 1), '],\n'))
+  # Col 8: SAP HH/ac (teal-soft bar)
+  cat(paste0(
+    '  [',
+    cell_bar(
+      fv("sap_planned_hh_per_acre", 1),
+      rel_pct(g("sap_planned_hh_per_acre"), col_max$sap),
+      teal_soft
+    ),
+    '],\n'
+  ))
 
-  # Col 7: Station Area Plan Housing (HH/Acre)
-  cat(paste0('  [', fv("sap_planned_hh_per_acre", 2), '],\n'))
+  # Col 9: Growth ERU/ac (amber bar)
+  cat(paste0(
+    '  [',
+    cell_bar(
+      fv("eru_per_acre", 1),
+      rel_pct(g("eru_per_acre"), col_max$eru),
+      amber
+    ),
+    '],\n'
+  ))
 
-  # Col 8: Projected Growth 2027-37 (ERU/Acre)
-  cat(paste0('  [', fv("eru_per_acre", 2), '],\n'))
-
-  # Col 9: OZ Investment Likelihood — last column, attributed to Urban Institute
-  oz_cls_raw <- if (is.na(g("oztoolclassification"))) NA_character_
-                else as.character(g("oztoolclassification"))
+  # Col 10: Likelihood pill
+  oz_cls_raw <- if (is.na(g("oztoolclassification"))) {
+    NA_character_
+  } else {
+    as.character(g("oztoolclassification"))
+  }
   if (is.na(oz_cls_raw)) {
-    cat('  [—],\n')
+    cat(paste0('  [#text(fill: rgb("', muted_c, '"))[—]],\n'))
   } else {
     cat(paste0(
-      '  [#box(fill: rgb("', oz_color(oz_cls_raw), '"), radius: 2pt, inset: (x: 4pt, y: 3pt))',
-      '[#text(fill: white, size: 7pt, weight: "bold")[', oz_class_short(oz_cls_raw), ']]],\n'
+      '  [#box(fill: rgb("',
+      oz_color(oz_cls_raw),
+      '"), radius: 3pt, inset: (x: 5pt, y: 3pt))',
+      '[#text(fill: white, size: 7pt, weight: "bold")[',
+      oz_class_short(oz_cls_raw),
+      ']]],\n'
     ))
   }
 }
 
 cat(')\n')
-cat('#v(0.04in)\n')
-cat('#line(length: 100%, stroke: (paint: rgb("#dddddd"), thickness: 0.5pt))\n')
-cat('#v(1pt)\n')
-cat('#align(right)[#text(size: 5.5pt, fill: rgb("#888888"))[Sources: Federal OZ 2.0 eligibility, Urban Institute OZ Tool, WFRC/MAG regional data. Growth projections 2027–2037. ATO = Access to Opportunities. ERU = Equivalent Residential Unit. SAP = Station Area Plan. WC = Wasatch Choice.]]\n')
 cat("```\n")
 ```
