@@ -189,10 +189,10 @@ uta_stops <- sf::read_sf(
 ) |>
   sf::st_transform(crs)
 
-# Geometry only — OBJECTID retained as feature ID
+# Station + Line needed for crosswalk join; OBJECTID kept for sap_overlap block below
 sap_buffers <- sf::read_sf(
   cache_paths$sap_buffers,
-  query = "SELECT OBJECTID, geom FROM sap_buffers"
+  query = "SELECT OBJECTID, Station, Line, geom FROM sap_buffers"
 ) |>
   sf::st_transform(crs) |>
   sf::st_make_valid()
@@ -416,14 +416,18 @@ housing_acres <- housing_joined |>
   dplyr::mutate(
     acre_cat = dplyr::case_when(
       TYPE == "single_family" ~ "sfd",
-      TYPE == "multi_family"  ~ "mf_sfa",
+      TYPE == "multi_family" ~ "mf_sfa",
       TRUE ~ NA_character_
     )
   ) |>
   dplyr::filter(!is.na(acre_cat)) |>
   dplyr::group_by(GEOID, acre_cat) |>
   dplyr::summarize(acres = sum(ACRES, na.rm = TRUE), .groups = "drop") |>
-  tidyr::complete(GEOID, acre_cat = c("sfd", "mf_sfa"), fill = list(acres = 0)) |>
+  tidyr::complete(
+    GEOID,
+    acre_cat = c("sfd", "mf_sfa"),
+    fill = list(acres = 0)
+  ) |>
   tidyr::pivot_wider(
     names_from = acre_cat,
     values_from = acres,
@@ -550,11 +554,73 @@ transit_info <- oz_tracts |>
 
 ```{r}
 #| label: transit-sap-housing
-# 3) Planned housing units in SAP areas within each tract, normalized by tract acres.
-#    Byron Head is assembling SAP plan tracking data (WFRC + MAG regions).
-#    Stubbed as NA until that dataset is provided; join to transit_info by GEOID.
+# Planned housing units in SAP areas per tract, normalized by SAP overlap acres.
+# Source: data/SAP Housing and Connections Metrics.xlsx (Byron Head, 2025).
+# Crosswalk maps GPKG (Station, Line) → Excel group + housing_units.
+# City-boundary polygon splits within the same group are adjacent (non-overlapping),
+# so summing individual polygon areas gives the correct group total without dissolving.
+sap_crosswalk <- readr::read_csv(
+  "data/sap_housing_crosswalk.csv",
+  comment = "#",
+  col_types = readr::cols_only(
+    station_gpkg = readr::col_character(),
+    line_gpkg = readr::col_character(),
+    group_id = readr::col_character(),
+    housing_units = readr::col_double()
+  )
+)
+
+# Per-polygon area → group total area → hh_density for each group
+sap_group_density <- sap_buffers |>
+  dplyr::inner_join(
+    sap_crosswalk,
+    by = c("Station" = "station_gpkg", "Line" = "line_gpkg")
+  ) |>
+  dplyr::mutate(poly_area_acres = as.numeric(sf::st_area(geom)) / 4046.8564) |>
+  sf::st_drop_geometry() |>
+  dplyr::group_by(group_id, housing_units) |>
+  dplyr::summarize(group_area_acres = sum(poly_area_acres), .groups = "drop") |>
+  dplyr::mutate(
+    hh_density = dplyr::if_else(
+      group_area_acres > 0,
+      housing_units / group_area_acres,
+      0
+    )
+  )
+
+# Attach group density back to individual (city-split) polygons for intersection
+sap_with_density <- sap_buffers |>
+  dplyr::inner_join(
+    sap_crosswalk,
+    by = c("Station" = "station_gpkg", "Line" = "line_gpkg")
+  ) |>
+  dplyr::left_join(
+    dplyr::select(sap_group_density, group_id, hh_density),
+    by = "group_id"
+  )
+
+# Intersect raw polygons with OZ tracts; area-weighted average density per tract
+sap_housing_overlap <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(sap_with_density, group_id, hh_density)
+  )
+) |>
+  dplyr::mutate(overlap_acres = as.numeric(sf::st_area(geom)) / 4046.8564) |>
+  sf::st_drop_geometry() |>
+  dplyr::filter(overlap_acres > 0) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarize(
+    sap_planned_hh_per_acre = sum(overlap_acres * hh_density) /
+      sum(overlap_acres),
+    .groups = "drop"
+  )
+
 transit_info <- transit_info |>
-  dplyr::mutate(sap_planned_hh_per_acre = NA_real_)
+  dplyr::left_join(sap_housing_overlap, by = "GEOID") |>
+  dplyr::mutate(
+    sap_planned_hh_per_acre = dplyr::coalesce(sap_planned_hh_per_acre, 0)
+  )
 ```
 
 ## Auto
@@ -928,34 +994,36 @@ persists `report_data.rds` + `tract_maps.rds` so the export chunks can load them
 #| label: report-build
 #| eval: false
 report_data <- tract_info |>
-  dplyr::left_join(centers_info,    by = "GEOID") |>
-  dplyr::left_join(housing_info,    by = "GEOID") |>
-  dplyr::left_join(transit_info,    by = "GEOID") |>
-  dplyr::left_join(auto_info,       by = "GEOID") |>
+  dplyr::left_join(centers_info, by = "GEOID") |>
+  dplyr::left_join(housing_info, by = "GEOID") |>
+  dplyr::left_join(transit_info, by = "GEOID") |>
+  dplyr::left_join(auto_info, by = "GEOID") |>
   dplyr::left_join(ato_composite_df, by = "GEOID") |>
-  dplyr::left_join(growth_info,     by = "GEOID") |>
-  dplyr::left_join(ui_info,         by = "GEOID")
+  dplyr::left_join(growth_info, by = "GEOID") |>
+  dplyr::left_join(ui_info, by = "GEOID")
 
 saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
-saveRDS(tract_maps,  file.path(remotes_dir, "tract_maps.rds"))
+saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
 message("Saved report_data.rds and tract_maps.rds to ", remotes_dir)
 ```
 
 ## 2 — Export Excel
 
-Requires openxlsx2 (`install.packages("openxlsx2")` then `renv::snapshot()`).
-
 ```{r}
 #| label: report-excel
 #| eval: false
-if (!exists("report_data")) report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
-if (!exists("tract_maps"))   tract_maps  <- readRDS(file.path(remotes_dir, "tract_maps.rds"))
+if (!exists("report_data")) {
+  report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
+}
+if (!exists("tract_maps")) {
+  tract_maps <- readRDS(file.path(remotes_dir, "tract_maps.rds"))
+}
 
 source("src/export_excel.R")
 export_excel(
   report_data = report_data,
-  tract_maps  = tract_maps,
-  settings    = settings,
+  tract_maps = tract_maps,
+  settings = settings,
   remotes_dir = remotes_dir
 )
 ```
@@ -969,20 +1037,25 @@ twice per county.
 ```{r}
 #| label: report-pdfs
 #| eval: false
-if (!exists("report_data")) report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
+if (!exists("report_data")) {
+  report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
+}
 
 county_names <- levels(droplevels(report_data$county))
-summary_dir  <- file.path(settings$output_dir, "summary")
-detail_dir   <- file.path(settings$output_dir, "detail")
+summary_dir <- file.path(settings$output_dir, "summary")
+detail_dir <- file.path(settings$output_dir, "detail")
 dir.create(summary_dir, showWarnings = FALSE, recursive = TRUE)
-dir.create(detail_dir,  showWarnings = FALSE, recursive = TRUE)
+dir.create(detail_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Pre-flight: Typst always writes to <input-basename>.pdf before renaming to
 # output_file. If a PDF viewer has those files open on Windows the write is
 # blocked — clear them now so the pipeline doesn't fail mid-run.
 for (.f in c("_county_summary.pdf", "_county_detail.pdf")) {
   if (file.exists(.f) && !suppressWarnings(file.remove(.f))) {
-    stop(sprintf("Close '%s' in your PDF viewer before running.", .f), call. = FALSE)
+    stop(
+      sprintf("Close '%s' in your PDF viewer before running.", .f),
+      call. = FALSE
+    )
   }
 }
 rm(.f)
@@ -992,16 +1065,16 @@ purrr::walk(county_names, function(county_name) {
 
   summary_file <- paste0(slug, "_OZ_Summary.pdf")
   quarto::quarto_render(
-    input          = "_county_summary.qmd",
-    output_file    = summary_file,
+    input = "_county_summary.qmd",
+    output_file = summary_file,
     execute_params = list(county = county_name, data_dir = remotes_dir)
   )
   file.rename(summary_file, file.path(summary_dir, summary_file))
 
   detail_file <- paste0(slug, "_OZ_Detail.pdf")
   quarto::quarto_render(
-    input          = "_county_detail.qmd",
-    output_file    = detail_file,
+    input = "_county_detail.qmd",
+    output_file = detail_file,
     execute_params = list(county = county_name, data_dir = remotes_dir)
   )
   file.rename(detail_file, file.path(detail_dir, detail_file))

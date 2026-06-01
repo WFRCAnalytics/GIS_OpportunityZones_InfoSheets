@@ -1,0 +1,96 @@
+# SAP Housing Crosswalk — maps GPKG (Station, Line) to planned housing units
+# One row per GPKG station. Stations in the same Excel group share the same group_id.
+# housing_units = the Excel group's total planned units; n/a entries encoded as 0.
+# Pipeline computes hh_density = housing_units / total_group_area_acres (area-proportional).
+#
+# TODO — GPKG station names unknown; add rows once confirmed:
+#   "South Jordan TRAX (3 unique stations)"  → 11580 HH
+#     Candidates: South Jordan Downtown (TRAX), South Jordan Parkway (TRAX), + 1 more TBD
+#   "Central Pointe & SSL TRAX/Streetcar"    → 5127 HH
+#     Candidates: Central Pointe (TRAX), Central Pointe (S-Line), South Salt Lake City (S-Line), + others?
+#
+station_gpkg,line_gpkg,group_id,housing_units
+# ── 1:1 mappings ──────────────────────────────────────────────────────────────
+Farmington,FrontRunner,farmington_fr,4417
+Ballpark,TRAX,ballpark_trax,1100
+4800 W Old Bingham Hwy,TRAX,bingham4800_trax,0
+Roy,FrontRunner,roy_fr,2052
+Bingham Junction,TRAX,bingham_jct_trax,73
+Historic Gardner,TRAX,historic_gardner_trax,917
+West Jordan City Center,TRAX,wjcc_trax,2300
+Midvale Fort Union,TRAX,midvale_ft_union_trax,4284
+Midvale Center,TRAX,midvale_ctr_trax,816
+Woods Cross,FrontRunner,woods_cross_fr,1293
+Murray North,TRAX,murray_n_trax,4362
+Clearfield,FrontRunner,clearfield_fr,2079
+Lehi,FrontRunner,lehi_fr,200
+Draper Town Center,TRAX,draper_tc_trax,835
+South Jordan,FrontRunner,sj_fr,2597
+Crescent View,TRAX,crescent_view_trax,95
+Kimballs Lane,TRAX,kimballs_trax,588
+Draper,FrontRunner,draper_fr,2553
+River Trail,TRAX,river_trail_trax,180
+Redwood Junction,TRAX,redwood_jct_trax,550
+Decker Lake,TRAX,decker_lake_trax,650
+West Valley Central,TRAX,wvc_trax,0
+5600 W Old Bingham Hwy,TRAX,bingham5600_trax,3000
+North Lehi,Point of the Mountain,north_lehi_sap,1064
+Layton,FrontRunner,layton_fr,950
+Fashion Place West,TRAX,fpw_trax,7100
+American Fork,FrontRunner,american_fork_fr,10500
+Vineyard,FrontRunner,vineyard_fr,11000
+Orem Central,FrontRunner,orem_fr,2425
+Ogden,FrontRunner,ogden_fr,0
+# ── Sandy TRAX (3 stations) ───────────────────────────────────────────────────
+Sandy Civic Center,TRAX,sandy_trax,3960
+Sandy Expo,TRAX,sandy_trax,3960
+Historic Sandy,TRAX,sandy_trax,3960
+# ── Ogden OGX (5 stations) ────────────────────────────────────────────────────
+32nd Street,OGX,ogden_ogx,727
+36th Street,OGX,ogden_ogx,727
+Weber State Central,OGX,ogden_ogx,727
+Wildcat Village,OGX,ogden_ogx,727
+Dee Events Center,OGX,ogden_ogx,727
+# ── Millcreek & Meadowbrook TRAX (spans SSL / Millcreek / Murray) ─────────────
+Millcreek,TRAX,millcreek_meadowbrook_trax,1403
+Meadowbrook,TRAX,millcreek_meadowbrook_trax,1403
+# ── Provo UVX + Provo FrontRunner (one Excel group, newline in source cell) ───
+2230 North,UVX,provo_uvx_fr,13387
+300 North,UVX,provo_uvx_fr,13387
+400 South,UVX,provo_uvx_fr,13387
+Academy Square,UVX,provo_uvx_fr,13387
+Center Street,UVX,provo_uvx_fr,13387
+Joaquin,UVX,provo_uvx_fr,13387
+Provo Central,FrontRunner,provo_uvx_fr,13387
+# ── Taylorsville Expressway BRT — VERIFY: assumed = Midvalley Connector ───────
+East Atherton,Midvalley Connector,taylorsville_brt,4044
+Fore Lakes,Midvalley Connector,taylorsville_brt,4044
+West Atherton,Midvalley Connector,taylorsville_brt,4044
+# ── Lehi Hospital & 2100 N BRT ────────────────────────────────────────────────
+Hospital,Point of the Mountain,lehi_hosp_2100n_brt,550
+2100 North,Central Corridor,lehi_hosp_2100n_brt,550
+# ── n/a groups (housing_units = 0) ────────────────────────────────────────────
+# 13 SLC downtown stations — VERIFY: confirm which 13 belong here
+Arena,TRAX,slc_downtown_trax,0
+City Center,TRAX,slc_downtown_trax,0
+Courthouse,TRAX,slc_downtown_trax,0
+Fairpark,TRAX,slc_downtown_trax,0
+Gallivan Plaza,TRAX,slc_downtown_trax,0
+Jackson/Euclid,TRAX,slc_downtown_trax,0
+Library,TRAX,slc_downtown_trax,0
+Old Greektown,TRAX,slc_downtown_trax,0
+Planetarium,TRAX,slc_downtown_trax,0
+Power,TRAX,slc_downtown_trax,0
+Salt Lake Central,TRAX,slc_downtown_trax,0
+Stadium,TRAX,slc_downtown_trax,0
+Temple Square,TRAX,slc_downtown_trax,0
+# Lakeview / Main St / University Place UVX
+Lakeview,UVX,lakeview_ms_up_uvx,0
+Main Street,UVX,lakeview_ms_up_uvx,0
+University Place,UVX,lakeview_ms_up_uvx,0
+# Airport / River Trail / U of U TRAX (River Trail already in river_trail_trax group with 180 HH)
+Airport,TRAX,airport_uofu_trax,0
+Fort Douglas,TRAX,airport_uofu_trax,0
+Research Park,TRAX,airport_uofu_trax,0
+University Medical Center,TRAX,airport_uofu_trax,0
+University South Campus,TRAX,airport_uofu_trax,0
