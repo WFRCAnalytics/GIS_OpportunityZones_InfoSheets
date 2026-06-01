@@ -914,39 +914,75 @@ tract_maps[["49035102900"]]
 
 # Assemble Report
 
+Each chunk below has `#| eval: false` and can be run independently in RStudio.
+Chunks 2 and 3 load from the RDS files on disk when `report_data` / `tract_maps`
+are not already in the session, so you can re-export without re-running the full
+data pipeline.
+
+## 1 — Build Master Table
+
+Run this first (or whenever source data changes). Joins all metric tables and
+persists `report_data.rds` + `tract_maps.rds` so the export chunks can load them.
+
 ```{r}
-#| label: report
+#| label: report-build
 #| eval: false
-# Join all data sections into a single master table (one row per tract)
 report_data <- tract_info |>
-  dplyr::left_join(centers_info, by = "GEOID") |>
-  dplyr::left_join(housing_info, by = "GEOID") |>
-  dplyr::left_join(transit_info, by = "GEOID") |>
-  dplyr::left_join(auto_info, by = "GEOID") |>
+  dplyr::left_join(centers_info,    by = "GEOID") |>
+  dplyr::left_join(housing_info,    by = "GEOID") |>
+  dplyr::left_join(transit_info,    by = "GEOID") |>
+  dplyr::left_join(auto_info,       by = "GEOID") |>
   dplyr::left_join(ato_composite_df, by = "GEOID") |>
-  dplyr::left_join(growth_info, by = "GEOID") |>
-  dplyr::left_join(ui_info, by = "GEOID")
+  dplyr::left_join(growth_info,     by = "GEOID") |>
+  dplyr::left_join(ui_info,         by = "GEOID")
 
-# Persist to disk — child documents run in separate R sessions and cannot
-# access the parent environment directly
 saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
-saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
+saveRDS(tract_maps,  file.path(remotes_dir, "tract_maps.rds"))
+message("Saved report_data.rds and tract_maps.rds to ", remotes_dir)
+```
 
-# Render summary and detail PDFs per county into output/summary/ and output/detail/
+## 2 — Export Excel
+
+Requires openxlsx2 (`install.packages("openxlsx2")` then `renv::snapshot()`).
+
+```{r}
+#| label: report-excel
+#| eval: false
+if (!exists("report_data")) report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
+if (!exists("tract_maps"))   tract_maps  <- readRDS(file.path(remotes_dir, "tract_maps.rds"))
+
+source("src/export_excel.R")
+export_excel(
+  report_data = report_data,
+  tract_maps  = tract_maps,
+  settings    = settings,
+  remotes_dir = remotes_dir
+)
+```
+
+## 3 — Export PDFs
+
+Summary and detail PDFs are rendered back-to-back per county — one pass through the
+county list produces both documents, which avoids reloading the RDS in child sessions
+twice per county.
+
+```{r}
+#| label: report-pdfs
+#| eval: false
+if (!exists("report_data")) report_data <- readRDS(file.path(remotes_dir, "report_data.rds"))
+
 county_names <- levels(droplevels(report_data$county))
 summary_dir  <- file.path(settings$output_dir, "summary")
 detail_dir   <- file.path(settings$output_dir, "detail")
 dir.create(summary_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(detail_dir,  showWarnings = FALSE, recursive = TRUE)
 
-# Pre-flight: Typst always writes to <input-basename>.pdf as an intermediate
-# before renaming to output_file. If those files are open in a PDF viewer on
-# Windows, the write is blocked. Delete them now so the pipeline doesn't fail
-# mid-run on the first county.
+# Pre-flight: Typst always writes to <input-basename>.pdf before renaming to
+# output_file. If a PDF viewer has those files open on Windows the write is
+# blocked — clear them now so the pipeline doesn't fail mid-run.
 for (.f in c("_county_summary.pdf", "_county_detail.pdf")) {
   if (file.exists(.f) && !suppressWarnings(file.remove(.f))) {
-    stop(sprintf("Close '%s' in your PDF viewer before running the pipeline.", .f),
-         call. = FALSE)
+    stop(sprintf("Close '%s' in your PDF viewer before running.", .f), call. = FALSE)
   }
 }
 rm(.f)
