@@ -804,7 +804,7 @@ make_tract_map <- function(geoid) {
   focal <- dplyr::filter(oz_tracts, GEOID == geoid)
   other_oz <- dplyr::filter(oz_tracts, GEOID != geoid)
   exp_bb <- .enforce_aspect(
-    .expand_bbox(sf::st_bbox(focal), factor = 1.5),
+    .expand_bbox(sf::st_bbox(focal), factor = 1.2),
     map_width_in,
     map_height_in
   )

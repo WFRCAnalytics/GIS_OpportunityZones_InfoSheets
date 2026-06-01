@@ -17,9 +17,5 @@ renv/staging/
 /.quarto/
 **/*.quarto_ipynb
 
-# HTML build artifacts from quarto render index.qmd
-output/index.html
-output/index_files/
-
 # handoff files from claude design
 handoff/

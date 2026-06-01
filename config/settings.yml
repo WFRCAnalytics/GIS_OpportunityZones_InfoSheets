@@ -5,6 +5,5 @@ state_name: "Utah"
 state_fips: "49"
 crs_analysis: 26912  # NAD83 / UTM Zone 12N — meters, correct for Utah area calculations
 output_dir: "output"
-map_width_in: 3
-map_height_in: 2
-detail_map_height_in: 4.6
+map_width_in: 3.6
+map_height_in: 5.0
