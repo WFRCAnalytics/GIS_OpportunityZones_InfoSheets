@@ -133,3 +133,11 @@ County order follows the WFRC region first (Box Elder, Weber, Davis, Salt Lake, 
 - **`config/settings.yml`** — map dimensions (3×2in), analysis CRS (EPSG:26912), output directory
 
 All spatial data is cached in **GPKG format** under `data/remotes/` (gitignored).
+
+---
+
+## Key Data Sources
+
+| Dataset | Source |
+|---|---|
+| SAP Housing & Connections Metrics | [Google Sheet (Byron Head)](https://docs.google.com/spreadsheets/d/1kQR94N1clI0LX5h9Bhi34Y5FHY6bqP09keCvRpbqoWs/) — also saved as `data/SAP Housing and Connections Metrics.xlsx` |
