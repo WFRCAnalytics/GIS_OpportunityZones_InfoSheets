@@ -26,6 +26,7 @@ library(stringr)
 
 # Mapping and output
 library(ggplot2)
+library(tidyterra)
 library(knitr)
 
 # Report assembly
@@ -811,7 +812,7 @@ ui_info <- oz_tracts |>
 # Prepare Maps
 
 ```{r}
-#| label: maps
+#| label: maps-setup
 # Expand bbox by a scale factor from its center, preserving CRS class/attributes
 .expand_bbox <- function(bbox, factor) {
   cx <- (bbox["xmin"] + bbox["xmax"]) / 2
@@ -858,8 +859,74 @@ wc_center_colors <- c(
   "Special District" = "#d3d3d3"
 )
 
-# Warm parchment — map canvas and plot background
-map_bg <- "#F7F4EF"
+# Open one WMTS connection per zoom level (12–16) at session start.
+# Zoom is chosen per-tract based on view width, so small urban tracts get
+# higher-resolution tiles than large rural ones. Each terra::rast() call
+# just reads the capabilities XML — no tiles are fetched yet.
+.wmts_base <- paste0(
+  "WMTS:https://discover.agrc.utah.gov/login/path/",
+  "slogan-emerald-slalom-nevada/wmts/1.0.0/WMTSCapabilities.xml",
+  ",layer=lite_basemap,tilematrixset=0to19,zoom_level="
+)
+.wmts_rasts <- purrr::set_names(
+  purrr::map(12:16, function(z) {
+    tryCatch(
+      terra::rast(paste0(.wmts_base, z)),
+      error = function(e) {
+        message("WMTS zoom ", z, " open failed: ", e$message)
+        NULL
+      }
+    )
+  }),
+  as.character(12:16)
+)
+.wmts_epsg <- local({
+  r <- purrr::detect(.wmts_rasts, Negate(is.null))
+  if (!is.null(r) && grepl("3857", terra::crs(r))) 3857L else 4326L
+})
+
+# Basemap tile cache — one GeoTIFF per tract per zoom level; populated on first run,
+# read from disk on subsequent runs so the pipeline never re-downloads tiles.
+.bm_dir <- file.path(remotes_dir, "basemap_cache")
+dir.create(.bm_dir, showWarnings = FALSE, recursive = TRUE)
+
+.fetch_basemap <- function(exp_bb, crs_epsg, zoom) {
+  rconn <- .wmts_rasts[[as.character(zoom)]]
+  if (is.null(rconn)) {
+    return(NULL)
+  }
+  tryCatch(
+    {
+      bbox_w <- sf::st_bbox(
+        sf::st_transform(
+          sf::st_set_crs(sf::st_as_sfc(exp_bb), crs_epsg),
+          .wmts_epsg
+        )
+      )
+      r_crop <- terra::crop(
+        rconn,
+        terra::ext(
+          bbox_w["xmin"],
+          bbox_w["xmax"],
+          bbox_w["ymin"],
+          bbox_w["ymax"]
+        )
+      )
+      if (terra::nlyr(r_crop) > 3L) {
+        r_crop <- r_crop[[1:3]]
+      }
+      terra::project(
+        r_crop,
+        paste0("EPSG:", crs_epsg),
+        res = (exp_bb["xmax"] - exp_bb["xmin"]) / 1200
+      )
+    },
+    error = function(e) {
+      message("Basemap crop failed (zoom ", zoom, "): ", e$message)
+      NULL
+    }
+  )
+}
 
 make_tract_map <- function(geoid) {
   focal <- dplyr::filter(oz_tracts, GEOID == geoid)
@@ -871,27 +938,49 @@ make_tract_map <- function(geoid) {
   )
   view <- sf::st_set_crs(sf::st_as_sfc(exp_bb), sf::st_crs(crs))
 
-  ggplot2::ggplot() +
-    # 1. Background census tracts — warm light gray, very recessive
-    ggplot2::geom_sf(
-      data = sf::st_filter(tracts, view),
-      fill = "#EDE8E1",
-      color = "#D8D2C8",
-      linewidth = 0.1
-    ) +
-    # 2. OZ 1.0 tracts — warm rose-gray underlay shows prior designation
-    ggplot2::geom_sf(
-      data = sf::st_filter(oz_1, view),
-      fill = "#D4C8C4",
-      color = NA,
-      alpha = 0.5
-    ) +
-    # 3. Wasatch Choice centers and districts
+  # Target ~4 tiles across the view width; clamp to [12, 16]
+  view_w_m <- exp_bb["xmax"] - exp_bb["xmin"]
+  view_ctr <- sf::st_coordinates(sf::st_transform(sf::st_centroid(view), 4326))
+  lat_rad <- view_ctr[1L, "Y"] * pi / 180
+  zoom <- max(
+    12L,
+    min(
+      16L,
+      as.integer(
+        round(log2(40075016.686 * cos(lat_rad) / view_w_m * 8)) - 3L
+      )
+    )
+  )
+
+  bm_path <- file.path(.bm_dir, paste0("bm_", geoid, "_z", zoom, ".tif"))
+  basemap <- if (file.exists(bm_path)) {
+    terra::rast(bm_path)
+  } else {
+    bm <- .fetch_basemap(exp_bb, crs, zoom)
+    if (!is.null(bm)) {
+      terra::writeRaster(bm, bm_path, overwrite = TRUE)
+    }
+    bm
+  }
+
+  # Dissolve all SAP buffers in view into a single outline — removes internal seams
+  sap_view <- sf::st_filter(sap_buffers, view)
+  sap_dissolved <- if (nrow(sap_view) > 0) sf::st_union(sap_view) else sap_view
+
+  p <- ggplot2::ggplot()
+
+  # 1. Basemap tiles (UGRC basemap-lite)
+  if (!is.null(basemap)) {
+    p <- p + tidyterra::geom_spatraster_rgb(data = basemap)
+  }
+
+  p +
+    # 2. Wasatch Choice centers — sole fill layer at 0.8 opacity
     ggplot2::geom_sf(
       data = sf::st_filter(wc_centers, view),
       ggplot2::aes(fill = CenterType),
       color = NA,
-      alpha = 0.75
+      alpha = 0.6
     ) +
     ggplot2::scale_fill_manual(
       values = wc_center_colors,
@@ -899,52 +988,50 @@ make_tract_map <- function(geoid) {
       na.value = "#C8C0C0",
       drop = TRUE
     ) +
-    # 4. Other OZ 2.0 candidate tracts — pale straw with amber border
+    # 3. Other OZ 2.0 tracts — thin amber outline, no fill; basemap reads through
     ggplot2::geom_sf(
       data = sf::st_filter(other_oz, view),
-      fill = "#F2E8C4",
-      color = "#C4A43A",
-      linewidth = 0.25,
-      alpha = 0.5
-    ) +
-    # 5. SAP buffers — cool blue over warm palette; temperature contrast reads clearly
-    ggplot2::geom_sf(
-      data = sf::st_filter(sap_buffers, view),
-      fill = "#B8D4E8",
-      color = "#6FA4C4",
-      linewidth = 0.25,
-      alpha = 0.45
-    ) +
-    # 6. County boundary — thin charcoal, crisp orientation anchor
-    ggplot2::geom_sf(
-      data = sf::st_filter(counties, view),
       fill = NA,
-      color = "#5A5A5A",
-      linewidth = 0.35
+      color = "#C4A43A",
+      linewidth = 0.3
     ) +
-    # 7. Freeway interchanges — solid dark-slate triangle; no white halo at this size
+    # 4. SAP buffers dissolved — prominent dashed outline marks transit influence area
+    ggplot2::geom_sf(
+      data = sap_dissolved,
+      fill = NA,
+      color = "#0072b5",
+      linewidth = 0.65,
+      linetype = "dashed"
+    ) +
+    # 5. Freeway interchanges
     ggplot2::geom_sf(
       data = sf::st_filter(freeway_exits, view),
       shape = 17,
       color = "#3A4A5A",
-      size = 2.0
+      size = 5.0
     ) +
-    # 8. UTA Rail / BRT stops — deep burgundy; white stroke separates from dark fills
+    # 6. UTA Rail / BRT stops
     ggplot2::geom_sf(
       data = sf::st_filter(uta_stops, view),
       shape = 21,
       fill = "#943030",
       color = "white",
-      size = 2.6,
+      size = 5,
       stroke = 0.4
     ) +
-    # 9. Focal tract — opaque charcoal border; fill alpha via scales::alpha() so
-    #    only the fill is translucent, leaving the stroke at full opacity
+    # 7. Focal tract — white halo first so the border reads cleanly over any basemap fill,
+    #    then WFRC primary teal outline at full weight
     ggplot2::geom_sf(
       data = focal,
-      fill = scales::alpha("#FFFFF0", 0.25),
-      color = "#1A1A1A",
-      linewidth = 1.2
+      fill = NA,
+      color = "white",
+      linewidth = 2.8
+    ) +
+    ggplot2::geom_sf(
+      data = focal,
+      fill = NA,
+      color = "#003b4f",
+      linewidth = 1.6
     ) +
     ggplot2::coord_sf(
       xlim = c(exp_bb["xmin"], exp_bb["xmax"]),
@@ -957,11 +1044,14 @@ make_tract_map <- function(geoid) {
     ggplot2::theme_void() +
     ggplot2::theme(
       legend.position = "none",
-      plot.background = ggplot2::element_rect(fill = map_bg, color = NA),
+      plot.background = ggplot2::element_rect(fill = "white", color = NA),
       plot.margin = ggplot2::margin(0, 0, 0, 0)
     )
 }
+```
 
+```{r}
+#| label: maps-generate
 tract_maps <- purrr::set_names(
   purrr::map(oz_tracts$GEOID, make_tract_map),
   oz_tracts$GEOID

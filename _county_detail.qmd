@@ -41,14 +41,14 @@ map_dir <- file.path(params$data_dir, "map_cache")
 dir.create(map_dir, showWarnings = FALSE)
 
 map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {
-  path <- file.path(map_dir, paste0("d_", geoid, ".svg"))
+  path <- file.path(map_dir, paste0("d_", geoid, ".png"))
   ggplot2::ggsave(
     filename = path,
     plot     = map,
     width    = settings$map_width_in,
     height   = settings$map_height_in,
-    device   = svglite::svglite,
-    bg       = "#F7F4EF"
+    dpi      = 200,
+    bg       = "white"
   )
   path
 })
@@ -585,7 +585,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
   # ── Assemble full page ────────────────────────────────────────────────────────
   map_legend <- paste0(
     '#grid(columns: (auto, auto, auto), column-gutter: 8pt, align: left + horizon,',
-    '[#box(fill: rgb("#B8D4E8"), width: 5pt, height: 5pt)[]',
+    '[#line(length: 8pt, stroke: (paint: rgb("#0072b5"), dash: "dashed", thickness: 1.2pt))',
     '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[SAP buffer]],',
     '[#box(fill: rgb("#943030"), radius: 2.5pt, width: 5pt, height: 5pt)[]',
     '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[Rail/BRT]],',
@@ -593,7 +593,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[Freeway exit]])'
   )
   map_cell <- paste0(
-    '[#block(fill: rgb("#F7F4EF"), ',
+    '[#block(fill: white, ',
     'stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt), ',
     'radius: 5pt, inset: 0pt, clip: true, width: 100%)',
     '[#image("', map_fwd, '", width: 100%)',
