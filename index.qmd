@@ -455,7 +455,7 @@ stops_within <- sf::st_join(
   dplyr::group_by(GEOID) |>
   dplyr::summarize(
     transit_stop_count = dplyr::n(),
-    transit_stop_names = paste(sort(unique(stopname)), collapse = "; "),
+    transit_stop_names = paste(sort(unique(Station)), collapse = "; "),
     .groups = "drop"
   )
 
