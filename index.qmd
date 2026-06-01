@@ -179,13 +179,9 @@ wc_centers <- sf::read_sf(
   sf::st_transform(crs) |>
   sf::st_make_valid()
 
-# mode is a comma-separated string (e.g. "Bus, BRT") — use LIKE for each target mode
 uta_stops <- sf::read_sf(
   cache_paths$uta_stops,
-  query = "SELECT stopabbr, stopname, geom FROM uta_stops
-           WHERE mode LIKE '%TRAX%'
-              OR mode LIKE '%FrontRunner%'
-              OR mode LIKE '%BRT%'"
+  query = "SELECT OBJECTID, Station, geom FROM uta_stops"
 ) |>
   sf::st_transform(crs)
 
@@ -448,15 +444,14 @@ housing_info <- oz_tracts |>
 
 ```{r}
 #| label: transit
-# ---- UTA Rail / BRT stops within each tract ----
-# uta_stops is already filtered to TRAX, FrontRunner, BRT at read time
+# ---- SAP station points within each tract ----
 stops_within <- sf::st_join(
   dplyr::select(oz_tracts, GEOID),
-  dplyr::select(uta_stops, stopname),
+  dplyr::select(uta_stops, Station),
   join = sf::st_contains
 ) |>
   sf::st_drop_geometry() |>
-  dplyr::filter(!is.na(stopname)) |>
+  dplyr::filter(!is.na(Station)) |>
   dplyr::group_by(GEOID) |>
   dplyr::summarize(
     transit_stop_count = dplyr::n(),

@@ -45,8 +45,8 @@ arcgis_layers:
     force_download: false
 
   uta_stops:
-    url: "https://maps.rideuta.com/server/rest/services/Hosted/UTA_Stops_and_Most_Recent_Ridership/FeatureServer/0"
-    description: "Full UTA stops (all modes) — filter to Rail and BRT in processing script"
+    url: "https://services2.arcgis.com/EiGeaCDLpVDPqdJ5/ArcGIS/rest/services/Station_Area_Planning_Data/FeatureServer/0"
+    description: "SAP station points (TRAX, FrontRunner, BRT) — curated list, no filter needed. Fields: Station, Line, Existing."
     force_download: false
 
   sap_buffers:
