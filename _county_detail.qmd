@@ -155,123 +155,27 @@ gauge_paths <- purrr::set_names(
   county_data$GEOID
 )
 
-# ── Static FKM icon PNGs (one per card type, generated once per render) ────────
-icon_wc_path      <- file.path(map_dir, "icon_wc.svg")
-icon_ato_path     <- file.path(map_dir, "icon_ato.svg")
-icon_sap_path     <- file.path(map_dir, "icon_sap.svg")
-icon_eru_path     <- file.path(map_dir, "icon_eru.svg")
-icon_transit_path <- file.path(map_dir, "icon_transit.svg")
-icon_auto_path    <- file.path(map_dir, "icon_auto.svg")
-icon_profile_path <- file.path(map_dir, "icon_profile.svg")
+# ── FKM card icons: static FontAwesome SVGs committed to assets/icons/ ──────────
+# Font Awesome Free 7.2.0 — CC BY 4.0 — https://fontawesome.com/license/free
+icon_wc_path      <- "assets/icons/icon_wc.svg"
+icon_ato_path     <- "assets/icons/icon_ato.svg"
+icon_sap_path     <- "assets/icons/icon_sap.svg"
+icon_eru_path     <- "assets/icons/icon_eru.svg"
+icon_transit_path   <- "assets/icons/icon_sap.svg"
+icon_auto_path      <- "assets/icons/icon_auto.svg"
+icon_profile_path   <- "assets/icons/icon_profile.svg"
+icon_housing_path   <- "assets/icons/icon_housing.svg"
+icon_eru_panel_path <- "assets/icons/icon_eru_blue.svg"
 
-# Icon 1: concentric rings — Wasatch Choice Centers
-{
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::annotate("point", x = 0, y = 0, size = 24, color = "#003B4F", alpha = 0.12) +
-    ggplot2::annotate("point", x = 0, y = 0, size = 15, color = "#003B4F", alpha = 0.28) +
-    ggplot2::annotate("point", x = 0, y = 0, size = 7,  color = "#003B4F", alpha = 0.85) +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_wc_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-# Icon 2: radial spokes — Access to Opportunities
-{
-  angs <- seq(0, 2 * pi, length.out = 9)[-9]
-  segs <- data.frame(x    = 0.28 * cos(angs), y    = 0.28 * sin(angs),
-                     xend = 0.90 * cos(angs), yend = 0.90 * sin(angs))
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::geom_segment(data = segs,
-      ggplot2::aes(x = x, y = y, xend = xend, yend = yend),
-      color = "#0E5C72", linewidth = 1.3) +
-    ggplot2::annotate("point", x = 0, y = 0, size = 5.5, color = "#0E5C72") +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_ato_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-# Icon 3: house silhouette — SAP Planned Housing
-{
-  roof <- data.frame(x = c(-0.72, 0, 0.72, -0.72), y = c(0.08, 0.88, 0.08, 0.08))
-  body <- data.frame(x = c(-0.52, 0.52, 0.52, -0.52, -0.52),
-                     y = c(0.08, 0.08, -0.80, -0.80, 0.08))
-  door <- data.frame(x = c(-0.17, 0.17, 0.17, -0.17, -0.17),
-                     y = c(-0.80, -0.80, -0.28, -0.28, -0.80))
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::geom_polygon(data = roof, ggplot2::aes(x = x, y = y),
-                          fill = "#3E7E91", color = NA) +
-    ggplot2::geom_path(data = body, ggplot2::aes(x = x, y = y),
-                       color = "#3E7E91", linewidth = 2.2) +
-    ggplot2::geom_polygon(data = door, ggplot2::aes(x = x, y = y),
-                          fill = "#3E7E91", color = NA) +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_sap_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-# Icon 4: ascending bars — Projected Growth
-{
-  bars <- data.frame(xmin = c(-0.85, -0.28, 0.30), xmax = c(-0.32, 0.25, 0.85),
-                     ymin = -0.75,                  ymax = c(-0.15, 0.25, 0.80))
-  p_ic <- ggplot2::ggplot(bars) +
-    ggplot2::geom_rect(ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-                       fill = "#C77B30", color = NA) +
-    ggplot2::annotate("segment", x = -0.95, xend = 0.95, y = -0.75, yend = -0.75,
-                      color = "#C77B30", linewidth = 1.3) +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_eru_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-
-# Icon 5: train rectangle + wheels — Transit
-{
-  train_body <- data.frame(xmin = -0.65, xmax = 0.65, ymin = -0.45, ymax = 0.70)
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::geom_rect(data = train_body,
-      ggplot2::aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
-      fill = NA, color = "#0E5C72", linewidth = 1.8) +
-    ggplot2::annotate("segment", x = -0.65, xend = 0.65, y = 0.10, yend = 0.10,
-      color = "#0E5C72", linewidth = 1.2) +
-    ggplot2::annotate("point", x = c(-0.32, 0.32), y = c(-0.68, -0.68),
-      size = 4, color = "#0E5C72") +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_transit_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-# Icon 6: car silhouette — Auto Access
-{
-  car_top  <- data.frame(x = c(-0.40, -0.68, 0.68, 0.40), y = c(0.52, 0.08, 0.08, 0.52))
-  car_body <- data.frame(x = c(-0.88, 0.88, 0.88, -0.88), y = c(0.08, 0.08, -0.34, -0.34))
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::geom_polygon(data = car_top,  ggplot2::aes(x = x, y = y), fill = "#0E5C72", color = NA) +
-    ggplot2::geom_polygon(data = car_body, ggplot2::aes(x = x, y = y), fill = "#0E5C72", color = NA) +
-    ggplot2::annotate("point", x = c(-0.54, 0.54), y = c(-0.62, -0.62), size = 5.5, color = "#0E5C72") +
-    ggplot2::annotate("point", x = c(-0.54, 0.54), y = c(-0.62, -0.62), size = 2.5, color = "#F1F7F8") +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_auto_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-# Icon 7: person silhouette — Tract Profile
-{
-  theta    <- seq(-pi, 0, length.out = 50)
-  shoulder <- data.frame(x = 0.78 * cos(theta), y = 0.78 * sin(theta) - 0.28)
-  p_ic <- ggplot2::ggplot() +
-    ggplot2::annotate("point", x = 0, y = 0.50, size = 12, color = "#3E7E91") +
-    ggplot2::geom_path(data = shoulder, ggplot2::aes(x = x, y = y),
-      color = "#3E7E91", linewidth = 2.2) +
-    ggplot2::coord_fixed(xlim = c(-1.5, 1.5), ylim = c(-1.5, 1.5)) +
-    ggplot2::theme_void() +
-    ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#F1F7F8", color = NA))
-  ggplot2::ggsave(icon_profile_path, p_ic, width = 0.55, height = 0.55, device = svglite::svglite, bg = "#F1F7F8")
-}
-
-icon_paths <- list(wc = icon_wc_path, ato = icon_ato_path,
-                   sap = icon_sap_path, eru = icon_eru_path,
-                   transit = icon_transit_path, auto = icon_auto_path,
-                   profile = icon_profile_path)
+icon_paths <- list(wc        = icon_wc_path,
+                   ato       = icon_ato_path,
+                   sap       = icon_sap_path,
+                   eru       = icon_eru_path,
+                   transit   = icon_transit_path,
+                   auto      = icon_auto_path,
+                   profile   = icon_profile_path,
+                   housing   = icon_housing_path,
+                   eru_panel = icon_eru_panel_path)
 ```
 
 ```{r}
@@ -428,32 +332,33 @@ key_card <- function(top_color, label_upper, value_str, unit_str, bar_pct_val, c
   bar_t <- if (!is.null(fp)) {
     fpp <- paste0(format(round(fp, 1), nsmall = 1), "%")
     paste0(
-      '#block(width: 100%, height: 4pt, fill: rgb("', track, '"), radius: 2pt)',
-      '[#block(width: ', fpp, ', height: 4pt, fill: rgb("', bar_color, '"), radius: 2pt)[]]'
+      '#block(width: 100%, height: 5pt, fill: rgb("', track, '"), radius: 2pt)',
+      '[#block(width: ', fpp, ', height: 5pt, fill: rgb("', bar_color, '"), radius: 2pt)[]]'
     )
   } else {
-    paste0('#block(width: 100%, height: 4pt, fill: rgb("', track, '"), radius: 2pt)[]')
+    paste0('#block(width: 100%, height: 5pt, fill: rgb("', track, '"), radius: 2pt)[]')
   }
   unit_t <- if (nchar(unit_str) > 0)
-    paste0('#h(2pt)#text(fill: rgb("', body_c, '"), size: 9pt)[', unit_str, ']')
+    paste0('#h(3pt)#text(fill: rgb("', body_c, '"), size: 10pt, baseline: -2pt)[', unit_str, ']')
   else ""
-  icon_t <- if (!is.null(icon_fwd))
-    paste0('#block(below: 3pt)[#image("', icon_fwd, '", width: 14pt, height: 14pt)]')
-  else ""
+  lbl_t  <- paste0('#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']')
+  hdr_t  <- if (!is.null(icon_fwd))
+    paste0('#grid(columns: (12pt, 1fr), gutter: 4pt, align: left + horizon,',
+           '[#image("', icon_fwd, '", width: 12pt, height: 12pt)],[', lbl_t, '])')
+  else lbl_t
 
   paste0(
     '#block(fill: rgb("', key_tint, '"), stroke: 0.75pt + rgb("', line_cool, '"), ',
     'radius: 5pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
     '[#block(height: 3pt, width: 100%, fill: rgb("', top_color, '"))[]',
-    '#block(inset: (x: 8pt, top: 5pt, bottom: 6pt), width: 100%)',
-    '[', icon_t,
-    '#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']',
-    '#v(3pt)',
-    '#text(fill: rgb("', ink, '"), size: 22pt, weight: "bold")[', value_str, ']',
+    '#block(inset: (x: 8pt, top: 6pt, bottom: 2pt), width: 100%)',
+    '[', hdr_t,
+    '#v(5pt)',
+    '#text(fill: rgb("', ink, '"), size: 26pt, weight: "bold")[', value_str, ']',
     unit_t,
-    '#v(4pt)',
+    '#v(8pt)',
     bar_t,
-    '#v(3pt)',
+    '#v(2pt)',
     '#text(fill: rgb("', muted_c, '"), size: 6.5pt)[', caption_str, ']',
     ']]'
   )
@@ -461,18 +366,19 @@ key_card <- function(top_color, label_upper, value_str, unit_str, bar_pct_val, c
 
 # Gauge card for ATO (ring image left + caption text right, no big number)
 gauge_card <- function(top_color, label_upper, gauge_img_path, caption_str, icon_fwd = NULL) {
-  icon_t <- if (!is.null(icon_fwd))
-    paste0('#block(below: 3pt)[#image("', icon_fwd, '", width: 14pt, height: 14pt)]')
-  else ""
+  lbl_t <- paste0('#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']')
+  hdr_t <- if (!is.null(icon_fwd))
+    paste0('#grid(columns: (12pt, 1fr), gutter: 4pt, align: left + horizon,',
+           '[#image("', icon_fwd, '", width: 12pt, height: 12pt)],[', lbl_t, '])')
+  else lbl_t
   paste0(
     '#block(fill: rgb("', key_tint, '"), stroke: 0.75pt + rgb("', line_cool, '"), ',
     'radius: 5pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
     '[#block(height: 3pt, width: 100%, fill: rgb("', top_color, '"))[]',
-    '#block(inset: (x: 8pt, top: 5pt, bottom: 6pt), width: 100%)',
-    '[', icon_t,
-    '#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']',
-    '#v(3pt)',
-    '#grid(columns: (auto, 1fr), gutter: 6pt, align: horizon,',
+    '#block(inset: (x: 8pt, top: 6pt, bottom: 7pt), width: 100%)',
+    '[', hdr_t,
+    '#v(5pt)',
+    '#grid(columns: (auto, 1fr), gutter: 8pt, align: horizon,',
     '[#image("', gauge_img_path, '", width: 40pt, height: 40pt)],',
     '[#text(fill: rgb("', muted_c, '"), size: 6.5pt)[', caption_str, ']]',
     ')]]'
@@ -568,7 +474,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     '#v(2pt)',
     '#line(length: 100%, stroke: (paint: rgb("', amber, '"), thickness: 0.5pt))',
     '#v(4pt)',
-    '#grid(columns: (1fr, 1fr, 1fr, 1fr), rows: (90pt), gutter: 0.08in,',
+    '#grid(columns: (1fr, 1fr, 1fr, 1fr), rows: (76pt), gutter: 0.08in,',
     '[', c1, '],[', c2, '],[', c3, '],[', c4, '])'
   )
 
@@ -626,7 +532,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
         "Unemployment",   unmpl_str),
     mkv("Median family income", mfi_str)
   )
-  housing_panel <- panel_box(phdr("HOUSING & DEMOGRAPHICS", icon_fwd_list$sap), housing_body, fill_h = TRUE)
+  housing_panel <- panel_box(phdr("HOUSING & DEMOGRAPHICS", icon_fwd_list$housing), housing_body, fill_h = TRUE)
 
   # ── Col 3: Transit panel ──────────────────────────────────────────────────────
   transit_body <- paste0(
@@ -656,7 +562,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     kv2("Jobs added",       job_plus, "ERU added",        eru_plus),
     mkv_bar("ERU / acre", fv("eru_per_acre", 1), eru_bar, amber)
   )
-  growth_panel <- panel_box(phdr("PROJECTED GROWTH 2027-37", icon_fwd_list$eru), growth_body, fill_h = TRUE)
+  growth_panel <- panel_box(phdr("PROJECTED GROWTH 2027-37", icon_fwd_list$eru_panel), growth_body, fill_h = TRUE)
 
   # ── Col 3: transit+auto side-by-side grid (fills 1fr row, panels stretch full height) ──
   transit_auto <- paste0(
