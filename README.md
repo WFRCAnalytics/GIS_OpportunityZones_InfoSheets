@@ -140,4 +140,4 @@ All spatial data is cached in **GPKG format** under `data/remotes/` (gitignored)
 
 | Dataset | Source |
 |---|---|
-| SAP Housing & Connections Metrics | [Google Sheet (Byron Head)](https://docs.google.com/spreadsheets/d/1kQR94N1clI0LX5h9Bhi34Y5FHY6bqP09keCvRpbqoWs/) — also saved as `data/SAP Housing and Connections Metrics.xlsx` |
+| SAP Housing & Connections Metrics | [Google Sheet (Byron Head)](https://docs.google.com/spreadsheets/d/1kQR94N1clI0LX5h9Bhi34Y5FHY6bqP09keCvRpbqoWs/) — also saved as `data/raw/SAP Housing and Connections Metrics.xlsx` |

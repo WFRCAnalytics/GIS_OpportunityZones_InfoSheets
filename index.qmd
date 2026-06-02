@@ -319,6 +319,40 @@ tract_info <- oz_tracts |>
   dplyr::arrange(county, GEOID)
 ```
 
+## Cities
+
+```{r}
+#| label: places-info
+# Intersect tracts with TIGER places; list cities ordered by overlap area desc.
+# Only include cities covering at least this share of the tract to exclude slivers.
+.places_min_pct <- 0.02   # 2 % of tract area
+
+tract_areas <- oz_tracts |>
+  dplyr::mutate(tract_area = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID, tract_area)
+
+places_int <- suppressWarnings(
+  sf::st_intersection(
+    dplyr::select(oz_tracts, GEOID),
+    dplyr::select(places, NAME)
+  )
+) |>
+  dplyr::mutate(int_area = as.numeric(sf::st_area(geom))) |>
+  sf::st_drop_geometry() |>
+  dplyr::left_join(tract_areas, by = "GEOID") |>
+  dplyr::filter(int_area / tract_area >= .places_min_pct) |>
+  dplyr::arrange(GEOID, dplyr::desc(int_area)) |>
+  dplyr::group_by(GEOID) |>
+  dplyr::summarize(cities = paste(NAME, collapse = ", "), .groups = "drop")
+
+places_info <- oz_tracts |>
+  sf::st_drop_geometry() |>
+  dplyr::select(GEOID) |>
+  dplyr::left_join(places_int, by = "GEOID") |>
+  dplyr::mutate(cities = dplyr::coalesce(cities, "—"))
+```
+
 ## Centers
 
 ```{r}
@@ -541,7 +575,6 @@ transit_info <- oz_tracts |>
     by = "GEOID"
   ) |>
   dplyr::mutate(
-    sap_acres = dplyr::coalesce(sap_acres, 0),
     sap_pct = round(sap_acres / total_acres * 100, 1)
   ) |>
   dplyr::select(-total_acres) |>
@@ -551,20 +584,37 @@ transit_info <- oz_tracts |>
 ```{r}
 #| label: transit-sap-housing
 # Planned housing units in SAP areas per tract, normalized by SAP overlap acres.
-# Source: data/SAP Housing and Connections Metrics.xlsx (Byron Head, 2025).
-# Crosswalk maps GPKG (Station, Line) → Excel group + housing_units.
+# Source: data/raw/SAP Housing and Connections Metrics.xlsx (Byron Head, 2025).
+# Crosswalk maps GPKG (Station, Line) → xlsx_group (Station(s) column in xlsx).
+# housing_units are read directly from the xlsx Numbers sheet; col 1 = Station(s), col 3 = Housing units.
 # City-boundary polygon splits within the same group are adjacent (non-overlapping),
 # so summing individual polygon areas gives the correct group total without dissolving.
 sap_crosswalk <- readr::read_csv(
-  "data/sap_housing_crosswalk.csv",
+  "data/raw/sap_housing_crosswalk.csv",
   comment = "#",
   col_types = readr::cols_only(
     station_gpkg = readr::col_character(),
-    line_gpkg = readr::col_character(),
-    group_id = readr::col_character(),
-    housing_units = readr::col_double()
+    line_gpkg    = readr::col_character(),
+    xlsx_group   = readr::col_character()
   )
-)
+) |>
+  dplyr::mutate(xlsx_group = stringr::str_squish(xlsx_group))
+
+sap_housing_xlsx <- openxlsx2::read_xlsx(
+  "data/raw/SAP Housing and Connections Metrics.xlsx",
+  sheet = "Numbers",
+  col_names = TRUE
+) |>
+  dplyr::select(xlsx_group = 1, housing_units = 3) |>
+  dplyr::filter(!is.na(xlsx_group), !grepl("^Total", xlsx_group)) |>
+  dplyr::mutate(
+    xlsx_group    = stringr::str_squish(xlsx_group),
+    housing_units = suppressWarnings(as.double(housing_units)),
+    housing_units = dplyr::if_else(is.na(housing_units), 0, housing_units)
+  )
+
+sap_crosswalk <- sap_crosswalk |>
+  dplyr::left_join(sap_housing_xlsx, by = "xlsx_group")
 
 # Per-polygon area → group total area → hh_density for each group
 sap_group_density <- sap_buffers |>
@@ -574,7 +624,7 @@ sap_group_density <- sap_buffers |>
   ) |>
   dplyr::mutate(poly_area_acres = as.numeric(sf::st_area(geom)) / 4046.8564) |>
   sf::st_drop_geometry() |>
-  dplyr::group_by(group_id, housing_units) |>
+  dplyr::group_by(xlsx_group, housing_units) |>
   dplyr::summarize(group_area_acres = sum(poly_area_acres), .groups = "drop") |>
   dplyr::mutate(
     hh_density = dplyr::if_else(
@@ -591,15 +641,15 @@ sap_with_density <- sap_buffers |>
     by = c("Station" = "station_gpkg", "Line" = "line_gpkg")
   ) |>
   dplyr::left_join(
-    dplyr::select(sap_group_density, group_id, hh_density),
-    by = "group_id"
+    dplyr::select(sap_group_density, xlsx_group, hh_density),
+    by = "xlsx_group"
   )
 
 # Intersect raw polygons with OZ tracts; area-weighted average density per tract
 sap_housing_overlap <- suppressWarnings(
   sf::st_intersection(
     dplyr::select(oz_tracts, GEOID),
-    dplyr::select(sap_with_density, group_id, hh_density)
+    dplyr::select(sap_with_density, xlsx_group, hh_density)
   )
 ) |>
   dplyr::mutate(overlap_acres = as.numeric(sf::st_area(geom)) / 4046.8564) |>
@@ -613,10 +663,8 @@ sap_housing_overlap <- suppressWarnings(
   )
 
 transit_info <- transit_info |>
-  dplyr::left_join(sap_housing_overlap, by = "GEOID") |>
-  dplyr::mutate(
-    sap_planned_hh_per_acre = dplyr::coalesce(sap_planned_hh_per_acre, 0)
-  )
+  dplyr::left_join(sap_housing_overlap, by = "GEOID")
+  # sap_planned_hh_per_acre: NA kept for non-MPO tracts (no SAP coverage)
 ```
 
 ## Auto
@@ -859,36 +907,54 @@ wc_center_colors <- c(
   "Special District" = "#d3d3d3"
 )
 
-# Open one WMTS connection per zoom level (12–16) at session start.
-# Zoom is chosen per-tract based on view width, so small urban tracts get
-# higher-resolution tiles than large rural ones. Each terra::rast() call
-# just reads the capabilities XML — no tiles are fetched yet.
-.wmts_base <- paste0(
-  "WMTS:https://discover.agrc.utah.gov/login/path/",
-  "slogan-emerald-slalom-nevada/wmts/1.0.0/WMTSCapabilities.xml",
-  ",layer=lite_basemap,tilematrixset=0to19,zoom_level="
-)
-.wmts_rasts <- purrr::set_names(
-  purrr::map(12:16, function(z) {
-    tryCatch(
-      terra::rast(paste0(.wmts_base, z)),
-      error = function(e) {
-        message("WMTS zoom ", z, " open failed: ", e$message)
-        NULL
-      }
-    )
-  }),
-  as.character(12:16)
-)
-.wmts_epsg <- local({
-  r <- purrr::detect(.wmts_rasts, Negate(is.null))
-  if (!is.null(r) && grepl("3857", terra::crs(r))) 3857L else 4326L
-})
-
-# Basemap tile cache — one GeoTIFF per tract per zoom level; populated on first run,
-# read from disk on subsequent runs so the pipeline never re-downloads tiles.
-.bm_dir <- file.path(remotes_dir, "basemap_cache")
+# Basemap tile cache — one GeoTIFF per tract per zoom level.
+# On first run tiles are fetched from UGRC WMTS and written to disk.
+# On subsequent runs the TIFs are read directly; no network request is made.
+.bm_dir <- "data/basemap_cache"
 dir.create(.bm_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Check whether all OZ tracts already have a cached basemap TIF.
+# Zoom is baked into the filename (bm_<GEOID>_z<zoom>.tif); any zoom hit counts.
+.bm_cached <- unique(sub("^bm_(.+)_z[0-9]+\\.tif$", "\\1",
+                          list.files(.bm_dir, pattern = "^bm_.+\\.tif$")))
+.bm_all_cached <- length(.bm_cached) > 0L &&
+                  all(oz_tracts$GEOID %in% .bm_cached)
+
+if (.bm_all_cached) {
+  message("Basemap cache: all ", length(.bm_cached), " tracts cached",
+          " — skipping WMTS connection.\n",
+          "  To regenerate: unlink(\"", .bm_dir, "\", recursive = TRUE)",
+          " then re-run this chunk.")
+  .wmts_rasts <- purrr::set_names(vector("list", 5L), as.character(12:16))
+  .wmts_epsg  <- 3857L
+} else {
+  .n_miss <- sum(!oz_tracts$GEOID %in% .bm_cached)
+  message("Basemap cache: ", length(.bm_cached), " / ", nrow(oz_tracts),
+          " tracts cached — fetching ", .n_miss, " missing tile(s) via WMTS.")
+  # Open one connection per zoom level; terra::rast() only reads the capabilities
+  # XML here — actual tile data is fetched lazily by terra::crop() per tract.
+  .wmts_base <- paste0(
+    "WMTS:https://discover.agrc.utah.gov/login/path/",
+    "slogan-emerald-slalom-nevada/wmts/1.0.0/WMTSCapabilities.xml",
+    ",layer=lite_basemap,tilematrixset=0to19,zoom_level="
+  )
+  .wmts_rasts <- purrr::set_names(
+    purrr::map(12:16, function(z) {
+      tryCatch(
+        terra::rast(paste0(.wmts_base, z)),
+        error = function(e) {
+          message("WMTS zoom ", z, " open failed: ", e$message)
+          NULL
+        }
+      )
+    }),
+    as.character(12:16)
+  )
+  .wmts_epsg <- local({
+    r <- purrr::detect(.wmts_rasts, Negate(is.null))
+    if (!is.null(r) && grepl("3857", terra::crs(r))) 3857L else 4326L
+  })
+}
 
 .fetch_basemap <- function(exp_bb, crs_epsg, zoom) {
   rconn <- .wmts_rasts[[as.character(zoom)]]
@@ -1003,23 +1069,7 @@ make_tract_map <- function(geoid) {
       linewidth = 0.65,
       linetype = "dashed"
     ) +
-    # 5. Freeway interchanges
-    ggplot2::geom_sf(
-      data = sf::st_filter(freeway_exits, view),
-      shape = 17,
-      color = "#3A4A5A",
-      size = 5.0
-    ) +
-    # 6. UTA Rail / BRT stops
-    ggplot2::geom_sf(
-      data = sf::st_filter(uta_stops, view),
-      shape = 21,
-      fill = "#943030",
-      color = "white",
-      size = 5,
-      stroke = 0.4
-    ) +
-    # 7. Focal tract — white halo first so the border reads cleanly over any basemap fill,
+    # 5. Focal tract — white halo first so the border reads cleanly over any basemap fill,
     #    then WFRC primary teal outline at full weight
     ggplot2::geom_sf(
       data = focal,
@@ -1032,6 +1082,22 @@ make_tract_map <- function(geoid) {
       fill = NA,
       color = "#003b4f",
       linewidth = 1.6
+    ) +
+    # 6. Freeway interchanges — above tract boundary so points are never clipped
+    ggplot2::geom_sf(
+      data = sf::st_filter(freeway_exits, view),
+      shape = 17,
+      color = "#3A4A5A",
+      size = 5.0
+    ) +
+    # 7. UTA Rail / BRT stops — topmost point layer
+    ggplot2::geom_sf(
+      data = sf::st_filter(uta_stops, view),
+      shape = 21,
+      fill = "#943030",
+      color = "white",
+      size = 5,
+      stroke = 0.4
     ) +
     ggplot2::coord_sf(
       xlim = c(exp_bb["xmin"], exp_bb["xmax"]),
@@ -1079,6 +1145,7 @@ persists `report_data.rds` + `tract_maps.rds` so the export chunks can load them
 #| label: report-build
 #| eval: false
 report_data <- tract_info |>
+  dplyr::left_join(places_info, by = "GEOID") |>
   dplyr::left_join(centers_info, by = "GEOID") |>
   dplyr::left_join(housing_info, by = "GEOID") |>
   dplyr::left_join(transit_info, by = "GEOID") |>
@@ -1108,8 +1175,7 @@ source("src/export_excel.R")
 export_excel(
   report_data = report_data,
   tract_maps = tract_maps,
-  settings = settings,
-  remotes_dir = remotes_dir
+  settings = settings
 )
 ```
 
@@ -1160,7 +1226,8 @@ purrr::walk(county_names, function(county_name) {
   quarto::quarto_render(
     input = "_county_detail.qmd",
     output_file = detail_file,
-    execute_params = list(county = county_name, data_dir = remotes_dir)
+    execute_params = list(county = county_name, data_dir = remotes_dir,
+                          map_cache_dir = "data/map_cache")
   )
   file.rename(detail_file, file.path(detail_dir, detail_file))
 })

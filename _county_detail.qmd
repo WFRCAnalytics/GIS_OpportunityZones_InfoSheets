@@ -2,6 +2,7 @@
 params:
   county: "Salt Lake"
   data_dir: "data/remotes"
+  map_cache_dir: "data/map_cache"
 format:
   typst:
     margin:
@@ -37,7 +38,7 @@ county_maps <- tract_maps[county_data$GEOID]
 ```{r}
 #| label: save-maps
 #| include: false
-map_dir <- file.path(params$data_dir, "map_cache")
+map_dir <- params$map_cache_dir
 dir.create(map_dir, showWarnings = FALSE)
 
 map_paths <- purrr::imap_chr(county_maps, function(map, geoid) {

@@ -21,6 +21,7 @@
 .XL_OZ_LESS   <- "#D98A3D"
 .XL_OZ_UNLKLY <- "#B4532E"
 .XL_OZ_UNK    <- "#9AA3A8"
+.XL_YELLOW_TINT <- "#FFFDE0"   # light yellow for key metric value cells
 
 # ── Convert "#RRGGBB" hex string → wbColour (strips # prefix) ─────────────────
 .xl_col <- function(hex) {
@@ -45,10 +46,10 @@
   if (is.null(cls) || length(cls) == 0 || is.na(cls)) return("—")
   cls <- as.character(cls)
   if (grepl("Likely to attract", cls, ignore.case = TRUE) &&
-      !grepl("More|Less|Un", cls, ignore.case = TRUE)) return("Likely to Attract Investment")
-  if (grepl("More likely",       cls, ignore.case = TRUE)) return("More Likely")
-  if (grepl("Less likely",       cls, ignore.case = TRUE)) return("Less Likely")
-  if (grepl("Unlikely|not likely", cls, ignore.case = TRUE)) return("Unlikely / Not Likely")
+      !grepl("More|Less|Un", cls, ignore.case = TRUE)) return("Likely")
+  if (grepl("More likely",         cls, ignore.case = TRUE)) return("More Likely")
+  if (grepl("Less likely",         cls, ignore.case = TRUE)) return("Less Likely")
+  if (grepl("Unlikely|not likely", cls, ignore.case = TRUE)) return("Unlikely")
   cls
 }
 
@@ -89,29 +90,30 @@
   paste(result, collapse = "")
 }
 
-# Column positions in the All Data sheet (one row per tract, 42 cols)
+# Column positions in the All Data sheet (one row per tract, 44 cols)
 .AD <- c(
   GEOID                      =  1L, county                     =  2L,
-  tract_label                =  3L, pop                        =  4L,
-  hh                         =  5L, total_acres                =  6L,
-  dev_acres                  =  7L, oz1_acres                  =  8L,
-  oz1_pct                    =  9L, wc_muc_pct                 = 10L,
-  wc_pct_metropolitan_center = 11L, wc_pct_urban_center        = 12L,
-  wc_pct_city_center         = 13L, wc_pct_neighborhood_center = 14L,
-  wc_pct_employment_district = 15L, wc_pct_industrial_district = 16L,
-  wc_pct_retail_district     = 17L, units_total                = 18L,
-  res_acres_total            = 19L, res_acres_sfd              = 20L,
-  res_acres_mf_sfa           = 21L, transit_stop_count         = 22L,
-  sap_acres                  = 23L, sap_pct                    = 24L,
-  ato_jobtransit             = 25L, ato_hhtransit              = 26L,
-  sap_planned_hh_per_acre    = 27L, freeway_exit_count         = 28L,
-  exit_dist_edge_mi          = 29L, ato_jobauto                = 30L,
-  ato_hhauto                 = 31L, ato_composite              = 32L,
-  hh_added                   = 33L, pop_added                  = 34L,
-  jobs_added                 = 35L, eru_added                  = 36L,
-  eru_per_acre               = 37L, pvrty_r                    = 38L,
-  unmpl_r                    = 39L, mfi                        = 40L,
-  oztoolclassification       = 41L, oz_short                   = 42L
+  tract_label                =  3L, cities                     =  4L,
+  pop                        =  5L, hh                         =  6L,
+  total_acres                =  7L, dev_acres                  =  8L,
+  oz1_acres                  =  9L, oz1_pct                    = 10L,
+  wc_muc_pct                 = 11L, wc_pct_metropolitan_center = 12L,
+  wc_pct_urban_center        = 13L, wc_pct_city_center         = 14L,
+  wc_pct_neighborhood_center = 15L, wc_pct_employment_district = 16L,
+  wc_pct_industrial_district = 17L, wc_pct_retail_district     = 18L,
+  units_total                = 19L, res_acres_total            = 20L,
+  res_acres_sfd              = 21L, res_acres_mf_sfa           = 22L,
+  transit_stop_count         = 23L, sap_acres                  = 24L,
+  sap_pct                    = 25L, ato_jobtransit             = 26L,
+  ato_hhtransit              = 27L, sap_planned_hh_per_acre    = 28L,
+  freeway_exit_count         = 29L, exit_dist_edge_mi          = 30L,
+  ato_jobauto                = 31L, ato_hhauto                 = 32L,
+  ato_composite              = 33L, ato_pct_county_avg         = 34L,
+  hh_added                   = 35L, pop_added                  = 36L,
+  jobs_added                 = 37L, eru_added                  = 38L,
+  eru_per_acre               = 39L, pvrty_r                    = 40L,
+  unmpl_r                    = 41L, mfi                        = 42L,
+  oztoolclassification       = 43L, oz_short                   = 44L
 )
 
 # Excel number formats per metric (used in All Data sheet and formula cells)
@@ -136,18 +138,27 @@
   jobs_added                 = "#,##0",     eru_added                  = "0.0",
   eru_per_acre               = "0.00",      pvrty_r                    = '0.0"%"',
   unmpl_r                    = '0.0"%"',    mfi                        = '"$"#,##0',
-  oztoolclassification       = "@",         oz_short                   = "@"
+  oztoolclassification       = "@",         oz_short                   = "@",
+  cities                     = "@",        ato_pct_county_avg         = '0.0"%"'
 )
 
 # Build an INDEX/MATCH formula: looks up geoid_ref in All Data col A,
 # returns the column for `metric`. Uses INDEX/MATCH (all Excel versions).
 # The &"" coerces the lookup value to text, preventing type-mismatch failures
 # when Excel silently converts 11-digit GEOIDs from text to numbers.
+# Numeric fields: blank All Data cells (NA in pipeline) show "Not Available/Applicable"
+# rather than 0, so non-MPO metrics (SAP, ATO) are honest about missing coverage.
 .xlup <- function(geoid_ref, metric, ad_sheet = "'All Data'") {
   if (!metric %in% names(.AD)) return('""')
-  cl <- .col_letter(.AD[[metric]])
-  paste0('=IFERROR(INDEX(', ad_sheet, '!$', cl, ':$', cl,
-         ',MATCH(', geoid_ref, '&"",', ad_sheet, '!$A:$A,0)),"-")')
+  cl  <- .col_letter(.AD[[metric]])
+  fmt <- .AD_FMT[[metric]]
+  idx <- paste0('INDEX(', ad_sheet, '!$', cl, ':$', cl,
+                ',MATCH(', geoid_ref, '&"",', ad_sheet, '!$A:$A,0))')
+  if (!is.na(fmt) && fmt != "@") {
+    paste0('=IFERROR(IF(', idx, '="","Not Available/Applicable",', idx, '),"-")')
+  } else {
+    paste0('=IFERROR(', idx, ',"-")')
+  }
 }
 
 # Raw INDEX/MATCH expression for embedding inside larger CONCAT formulas (no leading =).
@@ -196,7 +207,7 @@
 # ── Save tract maps as PNGs for Excel embedding ───────────────────────────────
 
 .save_map_pngs_xl <- function(tract_maps, geoids, map_dir,
-                               width = 2.5, height = 3.5, dpi = 300) {
+                               width = 2.27, height = 3.18, dpi = 300) {
   dir.create(map_dir, showWarnings = FALSE, recursive = TRUE)
   purrr::set_names(
     purrr::map_chr(geoids, function(geoid) {
@@ -232,6 +243,7 @@
     "County"                 = as.character(report_data$county),
     "Tract"                  = vapply(as.character(report_data$GEOID),
                                       .xl_tract_label, character(1L)),
+    "Cities"                 = as.character(report_data$cities),
     "Population"             = report_data$pop,
     "Households"             = report_data$hh,
     "Total Acres"            = report_data$total_acres,
@@ -261,6 +273,7 @@
     "ATO Jobs Auto"          = report_data$ato_jobauto,
     "ATO HH Auto"            = report_data$ato_hhauto,
     "ATO Composite /100"     = report_data$ato_composite,
+    "ATO % of County Avg"    = rep(NA_real_, nrow(report_data)),
     "HH Added"               = report_data$hh_added,
     "Pop Added"              = report_data$pop_added,
     "Jobs Added"             = report_data$jobs_added,
@@ -276,7 +289,7 @@
     stringsAsFactors = FALSE
   )
 
-  n_cols <- 42L
+  n_cols <- 44L
 
   # Row 1: title
   wb <- .mff(wb, "All Data", 1L, 1:n_cols,
@@ -306,8 +319,23 @@
   wb <- openxlsx2::wb_add_data(wb, "All Data", x = ad,
     dims = "A3", col_names = FALSE)
 
+  # openxlsx2 writes NA_real_ as Excel's #N/A error, not an empty cell.
+  # #N/A in numeric ranges breaks MIN/MAX (error propagates → all ATO formulas
+  # return ""), and IF(cell="","") comparisons propagate the error instead of
+  # returning blank. Overwrite each NA cell with "" so it is blank to Excel.
+  for (.na_col in c("oz1_acres", "sap_acres", "sap_planned_hh_per_acre",
+                    "exit_dist_edge_mi", "ato_jobauto", "ato_hhauto",
+                    "ato_jobtransit", "ato_hhtransit")) {
+    .na_rows <- which(is.na(report_data[[.na_col]])) + 2L
+    for (.na_r in .na_rows) {
+      wb <- openxlsx2::wb_add_data(wb, "All Data", x = "",
+                                   dims = .d1(.na_r, .AD[[.na_col]]), col_names = FALSE)
+    }
+  }
+  rm(.na_col, .na_rows)
+
   wb <- openxlsx2::wb_set_col_widths(wb, "All Data", cols = 1:n_cols,
-    widths = c(14, 12, 12, rep(10, 39)))
+    widths = c(14, 12, 12, 28, rep(10, 29), 14, rep(10, 10)))
 
   # Number formats on data cells (apply @ to text cols so Excel keeps them as text)
   data_rows <- 3L:(n_tracts + 2L)
@@ -319,11 +347,17 @@
     }
   }
 
-  # Derived columns: overwrite values from wb_add_data_table with Excel formulas
+  # Derived columns: overwrite values from wb_add_data with Excel formulas
   # so the sheet self-updates if raw inputs are edited.
   .cl <- function(m) .col_letter(.AD[[m]])
+  end_row <- n_tracts + 2L   # last data row; used for ATO min-max ranges
   for (row_i in seq_len(n_tracts)) {
     r <- row_i + 2L
+
+    # Residential acres total  =  SFD acres + MF/SFA acres
+    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+      dims = .d1(r, .AD[["res_acres_total"]]),
+      x = paste0("=", .cl("res_acres_sfd"), r, "+", .cl("res_acres_mf_sfa"), r))
 
     # OZ 1.0 %  =  OZ 1.0 Acres / Total Acres × 100
     wb <- openxlsx2::wb_add_formula(wb, "All Data",
@@ -338,11 +372,12 @@
                  "+", .cl("wc_pct_urban_center"), r,
                  "+", .cl("wc_pct_city_center"), r))
 
-    # SAP %  =  SAP Acres / Total Acres × 100
+    # SAP %  =  SAP Acres / Total Acres × 100 (blank when SAP acres unavailable)
     wb <- openxlsx2::wb_add_formula(wb, "All Data",
       dims = .d1(r, .AD[["sap_pct"]]),
-      x = paste0("=IFERROR(", .cl("sap_acres"), r,
-                 "/", .cl("total_acres"), r, "*100,0)"))
+      x = paste0('=IF(', .cl("sap_acres"), r, '="","",',
+                 'IFERROR(', .cl("sap_acres"), r,
+                 '/', .cl("total_acres"), r, '*100,0))'))
 
     # ERU Added  =  HH Added + Jobs Added × 0.4
     wb <- openxlsx2::wb_add_formula(wb, "All Data",
@@ -354,6 +389,37 @@
       dims = .d1(r, .AD[["eru_per_acre"]]),
       x = paste0("=IFERROR(", .cl("eru_added"), r,
                  "/", .cl("dev_acres"), r, ",0)"))
+
+    # ATO Composite  =  average of 4 min-max-normalised subscore components (0-100)
+    # Blank when subscores are unavailable (non-MPO tracts).
+    .norm <- function(m) {
+      cl  <- .cl(m)
+      rng <- paste0("$", cl, "$3:$", cl, "$", end_row)
+      paste0("(", cl, r, "-MIN(", rng, "))/(MAX(", rng, ")-MIN(", rng, "))*100")
+    }
+    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+      dims = .d1(r, .AD[["ato_composite"]]),
+      x = paste0(
+        '=IFERROR(IF(', .cl("ato_jobauto"), r, '="","",(',
+        .norm("ato_jobauto"),   "+",
+        .norm("ato_hhauto"),    "+",
+        .norm("ato_jobtransit"), "+",
+        .norm("ato_hhtransit"),
+        ')/4),"")'
+      ))
+
+    # ATO % of county avg  =  tract composite / AVERAGEIF(same county) × 100
+    # AVERAGEIF ignores blank cells, so non-MPO tracts are excluded from county avg.
+    ato_cl <- .cl("ato_composite")
+    cty_cl <- .cl("county")
+    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+      dims = .d1(r, .AD[["ato_pct_county_avg"]]),
+      x = paste0(
+        '=IFERROR(IF(', ato_cl, r, '="","",',
+        ato_cl, r,
+        '/AVERAGEIF($', cty_cl, ':$', cty_cl, ',$', cty_cl, r,
+        ',$', ato_cl, ':$', ato_cl, ')*100),"")'
+      ))
 
     # oz_short (col AP): static fill + white font keyed to classification
     oz_cls_i <- if (is.na(report_data$oztoolclassification[row_i])) NA_character_
@@ -404,12 +470,14 @@
 
   # Rows 5-9: Methodology text
   method_text <- paste0(
-    "This workbook is a machine-generated backup of the WFRC/MAG Opportunity Zone 2.0 ",
-    "candidate tract analysis. It contains all metrics calculated in the R/GIS pipeline ",
-    "for every census tract on the federal OZ 2.0 eligible list within the nine-county ",
-    "Wasatch Front region. The Summary sheet mirrors the one-page PDF summary table. ",
-    "Per-county sheets mirror the detail PDF pages and include an embedded tract map. ",
-    "All values update automatically when the pipeline is re-run with new data."
+    "This workbook presents the WFRC/MAG Opportunity Zone 2.0 candidate tract analysis ",
+    "for the nine-county Wasatch Front region. It covers every census tract on the ",
+    "federal OZ 2.0 eligible list, with metrics spanning land use, transit access, ",
+    "housing inventory, projected growth, and Access to Opportunities indicators. ",
+    "The Summary sheet provides a regional overview of all eligible tracts. ",
+    "Per-county sheets offer a detailed profile for each tract, including an embedded ",
+    "map and key metrics organized by theme. The All Data sheet contains the complete ",
+    "set of metrics in a flat, filterable table for cross-tract comparison and analysis."
   )
   wb <- .wc(wb, "README", 5, 1, method_text)
   wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(5:9, 1:4))
@@ -444,10 +512,10 @@
   # Rows 13+: sheet guide (All Data last)
   sheet_guide <- c("README", "Summary", paste0(county_names, " County"), "All Data")
   sheet_desc  <- c(
-    "This sheet: methodology, column glossary, and abbreviation key.",
-    "All-tract summary table: one row per tract, 14 columns matching the PDF summary. Values cross-referenced from All Data.",
-    paste0(county_names, " County: per-tract detail blocks with embedded map images. Values cross-referenced from All Data."),
-    "Flat database: all 42 metrics for every tract in one filterable Excel Table. Derived columns use in-sheet formulas."
+    "This sheet: about this workbook, abbreviation glossary, and data sources.",
+    "Regional overview: one row per tract with key profile and access metrics for all eligible tracts across the Wasatch Front.",
+    paste0(county_names, " County: per-tract detail blocks with embedded map and metrics organized by theme."),
+    "Complete dataset: all metrics for every tract in one filterable table. Use this sheet for cross-tract comparison and custom analysis."
   )
   for (k in seq_along(sheet_guide)) {
     row_r  <- 12 + k
@@ -550,6 +618,98 @@
     wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, 1),
       horizontal = "left", vertical = "center")
     wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 15)
+  }
+
+  # ── Methodology notes ─────────────────────────────────────────────────────
+  meth_start <- src_row + length(sources) + 2
+  wb <- .mff(wb, "README", meth_start, 1:4,
+    value = "METHODOLOGY NOTES",
+    fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
+  wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = meth_start, heights = 16)
+
+  meth_hdr <- meth_start + 1
+  for (j in 1:2) {
+    wb <- .wc(wb, "README", meth_hdr, j, c("Metric", "How It Is Calculated")[j])
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .d1(meth_hdr, j), color = .xl_col(.XL_TEAL))
+    wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(meth_hdr, j),
+      name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_WHITE))
+    wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(meth_hdr, j),
+      horizontal = "left", vertical = "center")
+  }
+  wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(meth_hdr, 2:4))
+  wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = meth_hdr, heights = 16)
+
+  meth_entries <- list(
+    list(
+      metric = "ATO Composite Score",
+      text   = paste0(
+        "Each of the four raw ATO subscores — Jobs (Auto), Households (Auto), Jobs (Transit), ",
+        "Households (Transit) — is rescaled 0–100 using min-max normalization across all ",
+        "MPO-region tracts in this export. The four normalized values are then averaged to produce ",
+        "a single 0–100 composite index (higher = greater access). ",
+        "Scores are relative to the tracts included in this export: adding or removing tracts ",
+        "would shift individual values."
+      )
+    ),
+    list(
+      metric = "ATO % of County Avg",
+      text   = paste0(
+        "Tract ATO Composite Score ÷ average ATO Composite Score for all tracts in the same ",
+        "county × 100. The county average is computed via AVERAGEIF in the All Data sheet and ",
+        "excludes non-MPO tracts (Tooele County), which have no ATO data. ",
+        "A value of 100 means the tract matches its county average; values above 100 indicate ",
+        "above-average access for that county."
+      )
+    ),
+    list(
+      metric = "ERU Added / ERU per Acre",
+      text   = paste0(
+        "ERU (Equivalent Residential Unit) standardizes growth across land use types. ",
+        "ERU Added = Households Added + (Jobs Added × 0.4). ",
+        "ERU per Acre = ERU Added ÷ Developable Acres. ",
+        "The 0.4 weight reflects that employment uses are less land-intensive than housing. ",
+        "Growth figures are sourced from WFRC/MAG TAZ projections (2027–2037), ",
+        "area-proportioned to census tract boundaries using developable acres as the weight."
+      )
+    ),
+    list(
+      metric = "Cities",
+      text   = paste0(
+        "Determined by spatial intersection of the census tract boundary with U.S. Census ",
+        "TIGER/Line Place boundaries (incorporated cities, towns, and census-designated places). ",
+        "Municipalities covering less than 2% of the tract area are excluded to avoid listing ",
+        "artifacts from boundary slivers. Where multiple cities qualify, they are listed in ",
+        "descending order of intersection area."
+      )
+    ),
+    list(
+      metric = "SAP & ATO Availability",
+      text   = paste0(
+        "Station Area Plan (SAP) and Access to Opportunities (ATO) metrics are derived from ",
+        "WFRC/MAG datasets that cover only the MPO planning boundary. Tooele County tracts ",
+        "fall outside this boundary and therefore have no SAP or ATO data. These cells show ",
+        "'Not Available/Applicable' in the per-county detail sheets and are left blank in ",
+        "the All Data sheet."
+      )
+    )
+  )
+
+  for (k in seq_along(meth_entries)) {
+    row_r  <- meth_hdr + k
+    fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
+    wb <- .wc(wb, "README", row_r, 1, meth_entries[[k]]$metric)
+    wb <- .wc(wb, "README", row_r, 2, meth_entries[[k]]$text)
+    wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(row_r, 2:4))
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(row_r, 1:4), color = .xl_col(fill_c))
+    wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
+      name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_TEAL))
+    wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 2),
+      name = "Poppins", size = 8, color = .xl_col(.XL_BODY))
+    wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, 1),
+      horizontal = "left", vertical = "top")
+    wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, 2),
+      horizontal = "left", vertical = "top", wrap_text = TRUE)
+    wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 52)
   }
 
   wb
@@ -716,202 +876,254 @@
 # ── Per-tract block (25 rows) ─────────────────────────────────────────────────
 
 .write_tract_block <- function(wb, sheet, tract, tract_num, r_start, map_paths) {
-  g      <- function(col) .xl_cv(tract, col)
-  r      <- function(offset) r_start + offset
-  geoid  <- as.character(g("GEOID"))
-  oz_cls <- if (is.na(g("oztoolclassification"))) NA_character_
-             else as.character(g("oztoolclassification"))
+  g       <- function(col) .xl_cv(tract, col)
+  r       <- function(offset) r_start + offset
+  geoid   <- as.character(g("GEOID"))
+  oz_cls  <- if (is.na(g("oztoolclassification"))) NA_character_
+              else as.character(g("oztoolclassification"))
   oz_fill <- .xl_oz_color(oz_cls)
-  h_ref   <- paste0("$H$", r_start)   # hidden GEOID anchor for INDEX/MATCH formulas
+  # GEOID embedded directly in INDEX/MATCH formulas — no anchor cell needed
+  h_ref   <- paste0('"', geoid, '"')
 
-  # Col H (hidden): write GEOID as the INDEX/MATCH key for all formula cells
-  wb <- .wc(wb, sheet, r_start, 8L, geoid)
-  # Force text storage — GEOIDs look numeric and Excel auto-converts them
-  wb <- openxlsx2::wb_add_numfmt(wb, sheet, dims = .d1(r_start, 8L), numfmt = "@")
-
-  # Row +0: Tract header — merged A:G, oz-color fill; text built from CONCAT+INDEX/MATCH
-  wb <- .mff(wb, sheet, r(0), 1:7, fill = oz_fill, font_size = 10, bold = TRUE)
+  # ── r+0: Tract header — merged A:J, oz-color fill ─────────────────────────
+  wb <- .mff(wb, sheet, r(0), 1:12, fill = oz_fill, font_size = 10, bold = TRUE)
   wb <- openxlsx2::wb_add_formula(wb, sheet, dims = .d1(r(0), 1L),
     x = paste0(
-      '="', sprintf("%02d", tract_num), "  —  \"",
+      '="', sprintf("%02d", tract_num), '  —  "',
       '&', .xlmatch(h_ref, "tract_label"),
       '&"  |  GEOID "&', h_ref,
       '&"  |  "&TEXT(', .xlmatch(h_ref, "total_acres", "0"), ',"0")',
-      '&" ac  |  "&',
-      .xlmatch(h_ref, "oz_short", '"—"')
+      '&" ac"'
     ))
   wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(0), heights = 22)
 
-  # Section sub-header helper
-  sec_hdr <- function(row_offset, labels, fg = .XL_AMBER, bg = .XL_KEY_TINT) {
-    for (j in seq_along(labels)) {
-      col_start <- (j - 1L) * 2L + 2L
-      wb <<- .mff(wb, sheet, r(row_offset), col_start:(col_start + 1L),
-        value = labels[[j]], fill = bg, font_size = 7, bold = TRUE,
-        font_color = fg, h_align = "left")
-    }
-    wb <<- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(row_offset), heights = 14)
+  # ── r+1: spacer ───────────────────────────────────────────────────────────
+  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(1), heights = 6)
+
+  # ── r+2: Four panel section headers ───────────────────────────────────────
+  for (cfg in list(
+    list(cols = 2:3,   label = "TRACT PROFILE"),
+    list(cols = 5:6,   label = "CENTERS & DISTRICTS"),
+    list(cols = 8:9,   label = "STATION AREA PLANNING (SAP)"),
+    list(cols = 11:12, label = "WORKPLACE ACCESS TO OPPORTUNITIES (ATO)")
+  )) {
+    wb <- .mff(wb, sheet, r(2), cfg$cols,
+      value = cfg$label, fill = .XL_KEY_TINT, font_size = 7, bold = TRUE,
+      font_color = .XL_AMBER, h_align = "left")
   }
+  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(2), heights = 14)
 
-  # Row +1: Section 1 sub-headers
-  sec_hdr(1, list("TRACT PROFILE", "CENTERS & DISTRICTS", "HOUSING & DEMOGRAPHICS"))
+  # Merge col A from TRACT PROFILE header down to MF/SFA Acres — map image sits on top
+  wb <- openxlsx2::wb_merge_cells(wb, sheet, dims = .dr(r(2):r(16), 1L))
+  wb <- openxlsx2::wb_add_border(wb, sheet, dims = .dr(r(2):r(16), 1L),
+    left_border = "", top_border = "", bottom_border = "",
+    right_border = "thin", right_color = .xl_col(.XL_LINE))
 
-  # KV block helper — each KV is list(label=, metric=); metric=NULL → blank value
-  kv_rows <- function(row_offset_start, s1, s2, s3, n_rows) {
-    for (off in seq_len(n_rows) - 1L) {
-      row_r  <- r(row_offset_start + off)
-      fill_c <- if (off %% 2 == 0) .XL_PANEL else .XL_WHITE
-      grps   <- list(
-        list(lc = 2L, vc = 3L, kv = s1[[off + 1L]]),
-        list(lc = 4L, vc = 5L, kv = s2[[off + 1L]]),
-        list(lc = 6L, vc = 7L, kv = s3[[off + 1L]])
-      )
-      for (grp in grps) {
-        wb <<- .wc(wb, sheet, row_r, grp$lc, grp$kv$label)
+  # ── KV row helper ─────────────────────────────────────────────────────────
+  # Each panel: list(lc, vc, label, [metric | formula | val], [numfmt],
+  #                  [vsize], [vcolor], [vfill], [lfill])
+  # lfill: background for the entire lc:vc range (default = default_fill arg)
+  # vfill: override fill for the value cell only (applied after lfill)
+  .kv <- function(row_offset, panels, default_fill = .XL_PANEL) {
+    row_r <- r(row_offset)
+    for (p in panels) {
+      if (is.null(p)) next
+      bg <- if (!is.null(p$lfill)) p$lfill else default_fill
+      wb <<- openxlsx2::wb_add_fill(wb, sheet,
+        dims = .dr(row_r, p$lc:p$vc), color = .xl_col(bg))
+      wb <<- .wc(wb, sheet, row_r, p$lc, p$label)
+      lc_color <- if (!is.null(p$lcolor)) p$lcolor else .XL_BODY
+      lc_size  <- if (!is.null(p$lsize))  p$lsize  else 8L
+      lc_bold  <- if (!is.null(p$lbold))  p$lbold  else FALSE
+      wb <<- openxlsx2::wb_add_font(wb, sheet, dims = .d1(row_r, p$lc),
+        name = "Poppins", size = lc_size, bold = lc_bold, color = .xl_col(lc_color))
+      wb <<- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(row_r, p$lc),
+        horizontal = "left", vertical = "center")
+      if (!is.null(p$vfill)) {
         wb <<- openxlsx2::wb_add_fill(wb, sheet,
-          dims = .dr(row_r, grp$lc:grp$vc), color = .xl_col(fill_c))
-        wb <<- openxlsx2::wb_add_font(wb, sheet, dims = .d1(row_r, grp$lc),
-          name = "Poppins", size = 8, color = .xl_col(.XL_BODY))
-        wb <<- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(row_r, grp$lc),
-          horizontal = "left", vertical = "center")
-        if (!is.null(grp$kv$metric)) {
-          wb <<- openxlsx2::wb_add_formula(wb, sheet,
-            dims = .d1(row_r, grp$vc), x = .xlup(h_ref, grp$kv$metric))
-          fmt <- .AD_FMT[[grp$kv$metric]]
-          if (!is.na(fmt) && fmt != "@") {
-            wb <<- openxlsx2::wb_add_numfmt(wb, sheet,
-              dims = .d1(row_r, grp$vc), numfmt = fmt)
-          }
-        } else {
-          wb <<- .wc(wb, sheet, row_r, grp$vc, "")
-        }
-        wb <<- openxlsx2::wb_add_font(wb, sheet, dims = .d1(row_r, grp$vc),
-          name = "Poppins", size = 9, bold = TRUE, color = .xl_col(.XL_INK))
-        wb <<- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(row_r, grp$vc),
-          horizontal = "right", vertical = "center")
+          dims = .d1(row_r, p$vc), color = .xl_col(p$vfill))
       }
+      if (!is.null(p$metric)) {
+        wb <<- openxlsx2::wb_add_formula(wb, sheet,
+          dims = .d1(row_r, p$vc), x = .xlup(h_ref, p$metric))
+        fmt <- .AD_FMT[[p$metric]]
+        if (!is.na(fmt) && fmt != "@") {
+          wb <<- openxlsx2::wb_add_numfmt(wb, sheet,
+            dims = .d1(row_r, p$vc), numfmt = fmt)
+        }
+      } else if (!is.null(p$formula)) {
+        wb <<- openxlsx2::wb_add_formula(wb, sheet,
+          dims = .d1(row_r, p$vc), x = p$formula)
+        if (!is.null(p$numfmt)) {
+          wb <<- openxlsx2::wb_add_numfmt(wb, sheet,
+            dims = .d1(row_r, p$vc), numfmt = p$numfmt)
+        }
+      } else if (!is.null(p$val)) {
+        wb <<- .wc(wb, sheet, row_r, p$vc, p$val)
+      }
+      vc_color <- if (!is.null(p$vcolor)) p$vcolor else .XL_INK
+      vc_size  <- if (!is.null(p$vsize))  p$vsize  else 9L
+      wb <<- openxlsx2::wb_add_font(wb, sheet, dims = .d1(row_r, p$vc),
+        name = "Poppins", size = vc_size, bold = TRUE, color = .xl_col(vc_color))
+      wb <<- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(row_r, p$vc),
+        horizontal = "right", vertical = "center")
     }
-    wb <<- openxlsx2::wb_set_row_heights(wb, sheet,
-      rows = r(row_offset_start):r(row_offset_start + n_rows - 1L), heights = 15)
+    wb <<- openxlsx2::wb_set_row_heights(wb, sheet, rows = row_r, heights = 15)
   }
 
-  # Rows +2 to +9: Section 1 KV (8 rows)
-  blank <- list(label = "", metric = NULL)
-  profile_kvs <- list(
-    list(label = "Population",           metric = "pop"),
-    list(label = "Households",           metric = "hh"),
-    list(label = "Total Acres",          metric = "total_acres"),
-    list(label = "Developable Acres",    metric = "dev_acres"),
-    list(label = "OZ 1.0 Acres",         metric = "oz1_acres"),
-    list(label = "OZ 1.0 % of Tract",    metric = "oz1_pct"),
-    blank, blank
-  )
-  centers_kvs <- list(
-    list(label = "WC MUorC % Total",    metric = "wc_muc_pct"),
-    list(label = "Metropolitan Center", metric = "wc_pct_metropolitan_center"),
-    list(label = "Urban Center",        metric = "wc_pct_urban_center"),
-    list(label = "City Center",         metric = "wc_pct_city_center"),
-    list(label = "Neighborhood Center", metric = "wc_pct_neighborhood_center"),
-    list(label = "Employment District", metric = "wc_pct_employment_district"),
-    list(label = "Industrial District", metric = "wc_pct_industrial_district"),
-    list(label = "Retail District",     metric = "wc_pct_retail_district")
-  )
-  housing_kvs <- list(
-    list(label = "Total Units",          metric = "units_total"),
-    list(label = "Residential Acres",    metric = "res_acres_total"),
-    list(label = "SFD Acres",            metric = "res_acres_sfd"),
-    list(label = "MF / SFA Acres",       metric = "res_acres_mf_sfa"),
-    list(label = "Poverty Rate",         metric = "pvrty_r"),
-    list(label = "Unemployment Rate",    metric = "unmpl_r"),
-    list(label = "Median Family Income", metric = "mfi"),
-    blank
-  )
-  kv_rows(2, profile_kvs, centers_kvs, housing_kvs, 8)
+  # Alternating fill for data rows (offsets 3-17)
+  .af <- function(off) if (((off - 3L) %% 2L) == 0L) .XL_PANEL else .XL_WHITE
 
-  # Row +10: Section 2 sub-headers
-  sec_hdr(10, list("TRANSIT ACCESS", "AUTO ACCESS", "PROJECTED GROWTH 2027-37"),
-    fg = .XL_TEAL_MID)
+  # ── r+3: Cities | WC Center Overlap % | Transit Stations | COMPOSITE SCORE
+  # Value cells for WC Overlap %, Transit Stations, and Composite score get light-yellow fill.
+  # COMPOSITE SCORE label is styled as a section sub-header (KEY_TINT, blue, bold 7pt).
+  .kv(3, list(
+    list(lc = 2L, vc = 3L,  label = "Cities",                           metric = "cities"),
+    list(lc = 5L, vc = 6L,  label = "WC Center Overlap %",               metric = "wc_muc_pct",
+         vfill = .XL_YELLOW_TINT),
+    list(lc = 8L, vc = 9L,  label = "Transit Stations (Fixed Guideway)", metric = "transit_stop_count",
+         vfill = .XL_YELLOW_TINT),
+    list(lc = 11L, vc = 12L, label = "Composite ATO Score",
+         metric = "ato_composite", vfill = .XL_YELLOW_TINT)
+  ), default_fill = .XL_WHITE)
+  # Cities is text — left-align (override the .kv default of right-align)
+  wb <- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(r(3), 3L),
+    horizontal = "left", vertical = "center")
 
-  # Rows +11 to +17: Section 2 KV (7 rows)
-  transit_kvs <- list(
-    list(label = "Rail / BRT Stops",          metric = "transit_stop_count"),
-    list(label = "SAP Acres",                 metric = "sap_acres"),
-    list(label = "SAP % of Tract",            metric = "sap_pct"),
-    list(label = "ATO Jobs (Transit)",        metric = "ato_jobtransit"),
-    list(label = "ATO Households (Transit)",  metric = "ato_hhtransit"),
-    list(label = "SAP Planned HH/ac",         metric = "sap_planned_hh_per_acre"),
-    blank
-  )
-  auto_kvs <- list(
-    list(label = "Freeway Exits",             metric = "freeway_exit_count"),
-    list(label = "Exit Distance (mi)",        metric = "exit_dist_edge_mi"),
-    list(label = "ATO Jobs (Auto)",           metric = "ato_jobauto"),
-    list(label = "ATO Households (Auto)",     metric = "ato_hhauto"),
-    blank, blank, blank
-  )
-  growth_kvs <- list(
-    list(label = "Households Added",          metric = "hh_added"),
-    list(label = "Population Added",          metric = "pop_added"),
-    list(label = "Jobs Added",                metric = "jobs_added"),
-    list(label = "ERU Added",                 metric = "eru_added"),
-    list(label = "ERU per Acre",              metric = "eru_per_acre"),
-    blank, blank
-  )
-  kv_rows(11, transit_kvs, auto_kvs, growth_kvs, 7)
+  # ── r+4: Population | Metropolitan Center | Station Area Acres | ATO % of County Avg
+  .kv(4, list(
+    list(lc = 2L, vc = 3L,  label = "Population",          metric = "pop"),
+    list(lc = 5L, vc = 6L,  label = "Metropolitan Center", metric = "wc_pct_metropolitan_center"),
+    list(lc = 8L, vc = 9L,  label = "Station Area Acres",  metric = "sap_acres"),
+    list(lc = 11L, vc = 12L, label = "ATO % of County Avg", metric = "ato_pct_county_avg",
+         vfill = .XL_YELLOW_TINT)
+  ), default_fill = .XL_WHITE)
 
-  # Row +18: Socioeconomic sub-headers
-  sec_hdr(18, list("INCOME", "POVERTY RATE", "UNEMPLOYMENT"), fg = .XL_TEAL_SOFT)
+  # ── r+5: Households | Urban Center | Station Area % | AUTO ACCESS (sub-hdr)
+  .kv(5, list(
+    list(lc = 2L, vc = 3L,  label = "Households",              metric = "hh"),
+    list(lc = 5L, vc = 6L,  label = "Urban Center",            metric = "wc_pct_urban_center"),
+    list(lc = 8L, vc = 9L,  label = "Station Area % of Tract", metric = "sap_pct")
+  ), default_fill = .XL_WHITE)
+  wb <- .mff(wb, sheet, r(5), 11:12, value = "AUTO ACCESS",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_TEAL, h_align = "left")
 
-  # Row +19: Socioeconomic values (XLOOKUP formulas)
-  for (ss in list(list(vc = 3L, m = "mfi"), list(vc = 5L, m = "pvrty_r"),
-                  list(vc = 7L, m = "unmpl_r"))) {
-    wb <- openxlsx2::wb_add_formula(wb, sheet,
-      dims = .d1(r(19), ss$vc), x = .xlup(h_ref, ss$m))
-    wb <- openxlsx2::wb_add_numfmt(wb, sheet,
-      dims = .d1(r(19), ss$vc), numfmt = .AD_FMT[[ss$m]])
-    wb <- openxlsx2::wb_add_fill(wb, sheet,
-      dims = .dr(r(19), (ss$vc - 1L):ss$vc), color = .xl_col(.XL_PANEL))
-    wb <- openxlsx2::wb_add_font(wb, sheet, dims = .d1(r(19), ss$vc),
-      name = "Poppins", size = 11, bold = TRUE, color = .xl_col(.XL_TEAL))
-    wb <- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(r(19), ss$vc),
-      horizontal = "right", vertical = "center")
-  }
-  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(19), heights = 18)
+  # ── r+6: Total Acres | City Center | SAP Planned HH/ac | Freeway Exits
+  .kv(6, list(
+    list(lc = 2L, vc = 3L,  label = "Total Acres",                         metric = "total_acres"),
+    list(lc = 5L, vc = 6L,  label = "City Center",                         metric = "wc_pct_city_center"),
+    list(lc = 8L, vc = 9L,  label = "Additional Planned Housing w/in SAP", metric = "sap_planned_hh_per_acre"),
+    list(lc = 11L, vc = 12L, label = "Freeway Exits",                       metric = "freeway_exit_count")
+  ), default_fill = .XL_WHITE)
 
-  # Row +20: Investment Likelihood — merged B:G, oz-color fill; text is INDEX/MATCH formula
-  wb <- .mff(wb, sheet, r(20), 2:7, fill = oz_fill, font_size = 11, bold = TRUE,
-    h_align = "center")
-  wb <- openxlsx2::wb_add_formula(wb, sheet, dims = .d1(r(20), 2L),
-    x = paste0('="Investment Likelihood: "&', .xlmatch(h_ref, "oz_short", '"—"')))
-  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(20), heights = 24)
+  # ── r+7: Developable Acres | Neighborhood Center | (blank) | ATO Jobs (Auto)
+  .kv(7, list(
+    list(lc = 2L, vc = 3L,  label = "Developable Acres",      metric = "dev_acres"),
+    list(lc = 5L, vc = 6L,  label = "Neighborhood Center",    metric = "wc_pct_neighborhood_center"),
+    list(lc = 8L, vc = 9L,  label = "",                       val = ""),
+    list(lc = 11L, vc = 12L, label = "ATO Jobs (Auto)",        metric = "ato_jobauto")
+  ), default_fill = .XL_WHITE)
 
-  # Row +21: ATO composite (XLOOKUP formula)
-  wb <- .mff(wb, sheet, r(21), 2:5,
-    value = "Access to Opportunities (ATO) Composite Score /100",
-    fill = .XL_HAIR, font_size = 8, font_color = .XL_MUTED)
+  # ── r+8: Poverty Rate | Employment District | PROJECTED GROWTH (sub-hdr) | ATO HH (Auto)
+  .kv(8, list(
+    list(lc = 2L, vc = 3L,  label = "Poverty Rate",            metric = "pvrty_r"),
+    list(lc = 5L, vc = 6L,  label = "Employment District",     metric = "wc_pct_employment_district"),
+    list(lc = 11L, vc = 12L, label = "ATO Households (Auto)",  metric = "ato_hhauto")
+  ), default_fill = .XL_WHITE)
+  wb <- .mff(wb, sheet, r(8), 8:9, value = "PROJECTED TRACT GROWTH 2027-37 (RTP Forecast)",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_AMBER, h_align = "left")
+
+  # ── r+9: Unemployment Rate | Industrial District | Households Added | TRANSIT ACCESS (sub-hdr)
+  .kv(9, list(
+    list(lc = 2L, vc = 3L,  label = "Unemployment Rate",   metric = "unmpl_r"),
+    list(lc = 5L, vc = 6L,  label = "Industrial District", metric = "wc_pct_industrial_district"),
+    list(lc = 8L, vc = 9L,  label = "Households Added",    metric = "hh_added")
+  ), default_fill = .XL_WHITE)
+  wb <- .mff(wb, sheet, r(9), 11:12, value = "TRANSIT ACCESS",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_TEAL, h_align = "left")
+
+  # ── r+10: Median Family Income | Retail District | Population Added | ATO Jobs (Transit)
+  .kv(10, list(
+    list(lc = 2L, vc = 3L,  label = "Median Family Income",  metric = "mfi"),
+    list(lc = 5L, vc = 6L,  label = "Retail District",       metric = "wc_pct_retail_district"),
+    list(lc = 8L, vc = 9L,  label = "Population Added",      metric = "pop_added"),
+    list(lc = 11L, vc = 12L, label = "ATO Jobs (Transit)",   metric = "ato_jobtransit")
+  ), default_fill = .XL_WHITE)
+
+  # ── r+11: (blank) | (blank) | Jobs Added | ATO HH (Transit)
+  .kv(11, list(
+    list(lc = 2L, vc = 3L,  label = "", val = ""),
+    list(lc = 5L, vc = 6L,  label = "", val = ""),
+    list(lc = 8L, vc = 9L,  label = "Jobs Added",              metric = "jobs_added"),
+    list(lc = 11L, vc = 12L, label = "ATO Households (Transit)", metric = "ato_hhtransit")
+  ), default_fill = .XL_WHITE)
+
+  # ── r+12: OZ 1.0 sub-hdr | Housing sub-hdr | ERU Added (data) | Urban Institute sub-hdr
+  wb <- .mff(wb, sheet, r(12), 2:3, value = "OVERLAP W/ OPPORTUNITY ZONES 1.0",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_AMBER, h_align = "left")
+  wb <- .mff(wb, sheet, r(12), 5:6, value = "2025 HOUSING UNIT INVENTORY",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_AMBER, h_align = "left")
+  wb <- openxlsx2::wb_add_fill(wb, sheet,
+    dims = .dr(r(12), 8:9), color = .xl_col(.XL_WHITE))
+  wb <- .wc(wb, sheet, r(12), 8L, "ERU Added")
+  wb <- openxlsx2::wb_add_font(wb, sheet, dims = .d1(r(12), 8L),
+    name = "Poppins", size = 8, color = .xl_col(.XL_BODY))
+  wb <- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(r(12), 8L),
+    horizontal = "left", vertical = "center")
   wb <- openxlsx2::wb_add_formula(wb, sheet,
-    dims = .d1(r(21), 6L), x = .xlup(h_ref, "ato_composite"))
+    dims = .d1(r(12), 9L), x = .xlup(h_ref, "eru_added"))
   wb <- openxlsx2::wb_add_numfmt(wb, sheet,
-    dims = .d1(r(21), 6L), numfmt = .AD_FMT[["ato_composite"]])
-  wb <- openxlsx2::wb_merge_cells(wb, sheet, dims = .dr(r(21), 6:7))
-  wb <- openxlsx2::wb_add_fill(wb, sheet, dims = .dr(r(21), 6:7), color = .xl_col(.XL_HAIR))
-  wb <- openxlsx2::wb_add_font(wb, sheet, dims = .d1(r(21), 6L),
-    name = "Poppins", size = 12, bold = TRUE, color = .xl_col(.XL_TEAL_MID))
-  wb <- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(r(21), 6L),
+    dims = .d1(r(12), 9L), numfmt = .AD_FMT[["eru_added"]])
+  wb <- openxlsx2::wb_add_font(wb, sheet, dims = .d1(r(12), 9L),
+    name = "Poppins", size = 9, bold = TRUE, color = .xl_col(.XL_INK))
+  wb <- openxlsx2::wb_add_cell_style(wb, sheet, dims = .d1(r(12), 9L),
     horizontal = "right", vertical = "center")
-  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(21), heights = 15)
+  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(12), heights = 13)
 
-  # Rows +22 to +24: spacers
-  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(22):r(24), heights = 8)
+  # ── r+13: OZ 1.0 Acres | Total Units | ERU per Acre | Urban Institute sub-hdr
+  .kv(13, list(
+    list(lc = 2L, vc = 3L, label = "OZ 1.0 Acres", metric = "oz1_acres"),
+    list(lc = 5L, vc = 6L, label = "Total Units",   metric = "units_total"),
+    list(lc = 8L, vc = 9L, label = "ERU per Acre",  metric = "eru_per_acre")
+  ), default_fill = .XL_WHITE)
+  wb <- .mff(wb, sheet, r(13), 11:12, value = "URBAN INSTITUTE ANALYSIS",
+    fill = .XL_KEY_TINT, font_size = 7, bold = TRUE, font_color = .XL_AMBER, h_align = "left")
 
-  # Map image anchored at col A, tract header row
+  # ── r+14: OZ 1.0 % | Residential Acres | (blank) | Investment Likelihood
+  .kv(14, list(
+    list(lc = 2L, vc = 3L,  label = "OZ 1.0 % of Tract",    metric = "oz1_pct"),
+    list(lc = 5L, vc = 6L,  label = "Residential Acres",     metric = "res_acres_total"),
+    list(lc = 8L, vc = 9L,  label = "", val = ""),
+    list(lc = 11L, vc = 12L, label = "Investment Likelihood", metric = "oz_short")
+  ), default_fill = .XL_WHITE)
+
+  # ── r+15: (blank) | SFD Acres | (blank) | (blank)
+  .kv(15, list(
+    list(lc = 2L, vc = 3L,  label = "", val = ""),
+    list(lc = 5L, vc = 6L,  label = "SFD Acres",      metric = "res_acres_sfd"),
+    list(lc = 8L, vc = 9L,  label = "", val = ""),
+    list(lc = 11L, vc = 12L, label = "", val = "")
+  ), default_fill = .XL_WHITE)
+
+  # ── r+16: (blank) | MF / SFA Acres | (blank) | (blank)
+  .kv(16, list(
+    list(lc = 2L, vc = 3L,  label = "", val = ""),
+    list(lc = 5L, vc = 6L,  label = "MF / SFA Acres", metric = "res_acres_mf_sfa"),
+    list(lc = 8L, vc = 9L,  label = "", val = ""),
+    list(lc = 11L, vc = 12L, label = "", val = "")
+  ), default_fill = .XL_WHITE)
+
+  # ── r+17 to r+22: spacers between tract blocks ────────────────────────────
+  wb <- openxlsx2::wb_set_row_heights(wb, sheet, rows = r(17):r(22), heights = 8)
+
+  # ── Map image anchored at col A, tract header row ─────────────────────────
   if (!is.null(map_paths) && geoid %in% names(map_paths) &&
       !is.na(map_paths[[geoid]]) && file.exists(map_paths[[geoid]])) {
     wb <- openxlsx2::wb_add_image(
       wb, sheet = sheet,
-      dims  = paste0("A", r(0)),
+      dims  = paste0("A", r(2)),
       file  = map_paths[[geoid]],
-      width = 2.5, height = 3.5, units = "in"
+      width = 2.27, height = 3.18, units = "in"
     )
   }
 
@@ -924,19 +1136,17 @@
   sheet_name <- paste0(county_name, " County")
   wb <- openxlsx2::wb_add_worksheet(wb, sheet = sheet_name,
     tab_color = .xl_col(.XL_TEAL))
-  wb <- openxlsx2::wb_set_col_widths(wb, sheet_name, cols = 1:7,
-    widths = c(36, 22, 13, 22, 13, 22, 13))
-  # Col H: hidden GEOID anchor used by XLOOKUP formulas in tract blocks
-  wb <- openxlsx2::wb_set_col_widths(wb, sheet_name, cols = 8L,
-    widths = 0.1, hidden = TRUE)
+  # A=map(28) | B-C=Tract Profile(22+22) | D=buf(3) | E-F=Centers(22+12) |
+  # G=buf(3) | H-I=SAP/Growth(26+12) | J=buf(3) | K-L=ATO(24+20)
+  wb <- openxlsx2::wb_set_col_widths(wb, sheet_name, cols = 1:12,
+    widths = c(28, 22, 22, 3, 22, 12, 3, 26, 12, 3, 24, 20))
 
-  # Sheet title
-  wb <- .mff(wb, sheet_name, 1, 1:7,
+  wb <- .mff(wb, sheet_name, 1, 1:12,
     value = paste0(county_name, " County — OZ 2.0 Candidate Tracts — Detail"),
     fill = .XL_TEAL, font_size = 14, bold = TRUE)
   wb <- openxlsx2::wb_set_row_heights(wb, sheet_name, rows = 1, heights = 28)
 
-  wb <- .mff(wb, sheet_name, 2, 1:7,
+  wb <- .mff(wb, sheet_name, 2, 1:12,
     value = paste0("WFRC & MAG Region  |  Generated ",
                    format(Sys.Date(), "%B %d, %Y")),
     fill = .XL_TEAL_MID, font_size = 9, font_color = .XL_SKY)
@@ -949,7 +1159,7 @@
   for (i in seq_len(nrow(county_data))) {
     wb <- .write_tract_block(wb, sheet_name, county_data[i, ], i,
                              current_row, map_paths)
-    current_row <- current_row + 25L
+    current_row <- current_row + 23L
   }
 
   wb
@@ -962,9 +1172,10 @@
 #' @param report_data  Master data frame (one row per tract) from index.qmd.
 #' @param tract_maps   Named list of ggplot objects keyed by GEOID.
 #' @param settings     Named list from config/settings.yml.
-#' @param remotes_dir  Path to data/remotes — map PNGs cached here.
-#' @param output_path  Overrides default output/OZ_Tracts_Export.xlsx.
-export_excel <- function(report_data, tract_maps, settings, remotes_dir,
+#' @param map_cache_dir  Path to map PNG cache directory (data/map_cache).
+#' @param output_path    Overrides default output/OZ_Tracts_Export.xlsx.
+export_excel <- function(report_data, tract_maps, settings,
+                         map_cache_dir = "data/map_cache",
                          output_path = NULL) {
   if (!requireNamespace("openxlsx2", quietly = TRUE)) {
     stop("openxlsx2 is required. Run: install.packages('openxlsx2')", call. = FALSE)
@@ -974,9 +1185,8 @@ export_excel <- function(report_data, tract_maps, settings, remotes_dir,
   }
   dir.create(dirname(output_path), showWarnings = FALSE, recursive = TRUE)
 
-  map_dir <- file.path(remotes_dir, "map_cache")
   message("Saving tract map PNGs for Excel...")
-  map_paths <- .save_map_pngs_xl(tract_maps, report_data$GEOID, map_dir)
+  map_paths <- .save_map_pngs_xl(tract_maps, report_data$GEOID, map_cache_dir)
 
   county_names <- levels(droplevels(report_data$county))
 

@@ -1,0 +1,93 @@
+# SAP Housing Crosswalk — maps GPKG (Station, Line) to xlsx group name
+# xlsx_group must match Station(s) column in data/raw/SAP Housing and Connections Metrics.xlsx
+# Whitespace (including newlines in merged xlsx cells) is squished before joining.
+# housing_units are read directly from the xlsx; do not add them here.
+#
+# TODO — GPKG station names unknown; add rows once confirmed:
+#   "South Jordan TRAX (3 unique stations)"  → stations TBD
+#   "Central Pointe & SSL TRAX/Streetcar"    → stations TBD
+#
+station_gpkg,line_gpkg,xlsx_group
+# ── 1:1 mappings ──────────────────────────────────────────────────────────────
+Farmington,FrontRunner,Farmington FrontRunner
+Ballpark,TRAX,Ballpark TRAX
+4800 W Old Bingham Hwy,TRAX,4800 W Old Bingham Hwy TRAX (S Jordan)
+Roy,FrontRunner,Roy FrontRunner (Roy & West Haven)
+Bingham Junction,TRAX,Bingham Junction TRAX (Midvale & W Jordan)
+Historic Gardner,TRAX,Historic Gardner TRAX (W Jordan & Midvale)
+West Jordan City Center,TRAX,West Jordan City Center TRAX
+Midvale Fort Union,TRAX,Midvale Ft Union TRAX (Midvale & Murray)
+Midvale Center,TRAX,Midvale Center TRAX
+Woods Cross,FrontRunner,"Woods Cross FrontRunner (Bountiful, W Bountiful, & Woods Cross)"
+Murray North,TRAX,Murray North TRAX (Murray & Millcreek)
+Clearfield,FrontRunner,Clearfield FrontRunner (Clearfield & Layton)
+Lehi,FrontRunner,Lehi FrontRunner
+Draper Town Center,TRAX,Draper Town Center TRAX
+South Jordan,FrontRunner,South Jordan FrontRunner (S Jordan & Sandy)
+Crescent View,TRAX,Crescent View TRAX (Sandy & Draper)
+Kimballs Lane,TRAX,Kimballs Lane TRAX (Draper)
+Draper,FrontRunner,Draper FrontRunner (Draper & Riverton)
+River Trail,TRAX,"River Trail TRAX (West Valley City, Salt Lake City)"
+Redwood Junction,TRAX,Redwood Junction TRAX
+Decker Lake,TRAX,Decker Lake TRAX
+West Valley Central,TRAX,West Valley Central TRAX
+5600 W Old Bingham Hwy,TRAX,5600 W Old Bingham Hwy (W Jordan & S Jordan)
+North Lehi,Point of the Mountain,North Lehi SAP
+Layton,FrontRunner,Layton FrontRunner
+Fashion Place West,TRAX,Fashion Place West TRAX
+American Fork,FrontRunner,American Fork FrontRunner (American Fork & Lehi)
+Vineyard,FrontRunner,Vineyard FrontRunner
+Orem Central,FrontRunner,Orem FrontRunner (Orem & Vineyard)
+Ogden,FrontRunner,Ogden FrontRunner
+# ── Sandy TRAX (3 stations share one xlsx group) ───────────────────────────────
+Sandy Civic Center,TRAX,Sandy TRAX (3 unique stations)
+Sandy Expo,TRAX,Sandy TRAX (3 unique stations)
+Historic Sandy,TRAX,Sandy TRAX (3 unique stations)
+# ── Ogden OGX (5 stations share one xlsx group) ────────────────────────────────
+32nd Street,OGX,"Ogden OGX: 32nd St, 36th St, Weber State Central, Wildcat Village, Dee Events Center"
+36th Street,OGX,"Ogden OGX: 32nd St, 36th St, Weber State Central, Wildcat Village, Dee Events Center"
+Weber State Central,OGX,"Ogden OGX: 32nd St, 36th St, Weber State Central, Wildcat Village, Dee Events Center"
+Wildcat Village,OGX,"Ogden OGX: 32nd St, 36th St, Weber State Central, Wildcat Village, Dee Events Center"
+Dee Events Center,OGX,"Ogden OGX: 32nd St, 36th St, Weber State Central, Wildcat Village, Dee Events Center"
+# ── Millcreek & Meadowbrook TRAX ─────────────────────────────────────────────
+Millcreek,TRAX,Millcreek & Meadowbrook TRAX (SSL, Millcreek, Murray)
+Meadowbrook,TRAX,Millcreek & Meadowbrook TRAX (SSL, Millcreek, Murray)
+# ── Provo UVX + FrontRunner (one xlsx group; xlsx cell has a newline, squished away) ─
+2230 North,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+300 North,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+400 South,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+Academy Square,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+Center Street,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+Joaquin,UVX,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+Provo Central,FrontRunner,"Provo UVX: 2230 N, Joaquin, Academy Square, 300 N, Center St, & 400 S Provo FrontRunner"
+# ── Taylorsville Expressway BRT ───────────────────────────────────────────────
+East Atherton,Midvalley Connector,Taylorsville Expressway BRT (3 stations)
+Fore Lakes,Midvalley Connector,Taylorsville Expressway BRT (3 stations)
+West Atherton,Midvalley Connector,Taylorsville Expressway BRT (3 stations)
+# ── Lehi Hospital & 2100 N BRT ────────────────────────────────────────────────
+Hospital,Point of the Mountain,Lehi Hospital & 2100 N BRT
+2100 North,Central Corridor,Lehi Hospital & 2100 N BRT
+# ── 13 SLC downtown stations (n/a housing) ────────────────────────────────────
+Arena,TRAX,13 Salt Lake City downtown stations
+City Center,TRAX,13 Salt Lake City downtown stations
+Courthouse,TRAX,13 Salt Lake City downtown stations
+Fairpark,TRAX,13 Salt Lake City downtown stations
+Gallivan Plaza,TRAX,13 Salt Lake City downtown stations
+Jackson/Euclid,TRAX,13 Salt Lake City downtown stations
+Library,TRAX,13 Salt Lake City downtown stations
+Old Greektown,TRAX,13 Salt Lake City downtown stations
+Planetarium,TRAX,13 Salt Lake City downtown stations
+Power,TRAX,13 Salt Lake City downtown stations
+Salt Lake Central,TRAX,13 Salt Lake City downtown stations
+Stadium,TRAX,13 Salt Lake City downtown stations
+Temple Square,TRAX,13 Salt Lake City downtown stations
+# ── UVX n/a groups ────────────────────────────────────────────────────────────
+Lakeview,UVX,"Lakeview, Main St, & University Place UVX"
+Main Street,UVX,"Lakeview, Main St, & University Place UVX"
+University Place,UVX,"Lakeview, Main St, & University Place UVX"
+# ── Airport / U of U TRAX (n/a) ───────────────────────────────────────────────
+Airport,TRAX,"Airport, River Trail, & U of U TRAX"
+Fort Douglas,TRAX,"Airport, River Trail, & U of U TRAX"
+Research Park,TRAX,"Airport, River Trail, & U of U TRAX"
+University Medical Center,TRAX,"Airport, River Trail, & U of U TRAX"
+University South Campus,TRAX,"Airport, River Trail, & U of U TRAX"
