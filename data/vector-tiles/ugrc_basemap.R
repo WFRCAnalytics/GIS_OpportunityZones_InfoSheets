@@ -174,6 +174,16 @@ showtext_auto()
 .C_STR <- "#8C8989"
 .C_STR_HALO <- rgb(230, 228, 225, 153, maxColorValue = 255) # rgba(230,228,225,0.60)
 
+# Feature labels — from JSON paint properties
+.C_WATER_LBL  <- "#829599"                                       # streams, lakes (blue-gray)
+.C_WATER_HALO <- rgb(240, 248, 248, 140, maxColorValue = 255)   # very light aqua halo
+.C_PARK_LBL   <- "#8C8C77"                                       # parks, golf, cemeteries
+.C_PARK_HALO  <- rgb(235, 235, 220, 128, maxColorValue = 255)   # warm-gray halo
+.C_MON_LBL    <- "#807E7D"                                       # monuments, state parks
+.C_MON_HALO   <- rgb(230, 228, 225, 128, maxColorValue = 255)   # same as city halo
+.C_SKI_LBL    <- "#7A9098"                                       # ski area labels
+.C_SKI_HALO   <- rgb(230, 235, 237, 128, maxColorValue = 255)
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. ROAD LINEWIDTH LOOKUP TABLES
 # ══════════════════════════════════════════════════════════════════════════════
@@ -453,19 +463,25 @@ extract_label_coords <- function(sf_obj) {
 
 .fetch_hillshade <- function(hu, zoom) safe_read_mvt(hu, .hs_res_layer(zoom))
 
-.fetch_labels <- function(lu, zoom) {
+.fetch_labels <- function(lu, bu, zoom) {
   list(
-    county = safe_read_mvt(lu, "Counties/label"),
-    city = safe_read_mvt(lu, "CitiesTownsLocations_VT"),
-    highway = safe_read_mvt(
-      lu,
-      "Roads - Interstates and Ramps - white version/label"
-    ),
-    street = if (zoom >= 8) {
-      safe_read_mvt(lu, "Roads - white version/label")
-    } else {
-      .empty_sf()
-    }
+    # Administrative / road labels — from LiteLabels tile
+    county  = safe_read_mvt(lu, "Counties/label"),
+    city    = safe_read_mvt(lu, "CitiesTownsLocations_VT"),
+    highway = safe_read_mvt(lu, "Roads - Interstates and Ramps - white version/label"),
+    street  = if (zoom >= 8) safe_read_mvt(lu, "Roads - white version/label") else .empty_sf(),
+
+    # Feature labels — from LiteBase tile (these live in the base tile, not label tile)
+    # Zoom gates match JSON minzoom for each label class
+    streams    = if (zoom >= 8)  safe_read_mvt(bu, "StreamsNHDHighRes/label")              else .empty_sf(),
+    lakes      = if (zoom >= 8)  safe_read_mvt(bu, "LakesNHDHighRes_OLD/label")            else .empty_sf(),
+    gsl        = if (zoom >= 7)  safe_read_mvt(bu, "GSLWaterLevel2016_simplified50/label") else .empty_sf(),
+    monuments  = if (zoom >= 8)  safe_read_mvt(bu, "UtahParksAndMonuments/label")          else .empty_sf(),
+    parks      = if (zoom >= 13) safe_read_mvt(bu, "ParksLocal/label")                     else .empty_sf(),
+    golf       = if (zoom >= 13) safe_read_mvt(bu, "GolfCourses/label")                    else .empty_sf(),
+    cemeteries = if (zoom >= 10) safe_read_mvt(bu, "Cemeteries_Poly/label")                else .empty_sf(),
+    trails     = if (zoom >= 14) safe_read_mvt(bu, "TrailsAndPathways/label")              else .empty_sf(),
+    ski        = if (zoom >= 13) safe_read_mvt(bu, "SkiAreaBoundaries/label")              else .empty_sf()
   )
 }
 
@@ -674,15 +690,37 @@ extract_label_coords <- function(sf_obj) {
 }
 
 .sz_street <- function(zoom, cls) {
-  if (is.na(cls) || cls %in% c(0L, 1L, 2L)) {
-    return(1.9)
-  } # shields
-  approx(
-    c(8, 9, 11, 12, 13, 14, 15, 16),
-    c(1.9, 1.9, 2.0, 2.3, 2.5, 2.8, 3.1, 3.5),
-    xout = zoom,
-    rule = 2
-  )$y
+  if (is.na(cls) || cls %in% c(0L, 1L, 2L)) return(1.9)  # shields
+  approx(c(8,9,11,12,13,14,15,16), c(1.9,1.9,2.0,2.3,2.5,2.8,3.1,3.5), xout=zoom, rule=2)$y
+}
+
+# ── Feature label size helpers (derived from JSON text-size stops) ─────────────
+# Stream / lake labels — size by prominence class and zoom
+# JSON: Major ~9-13px at z8-14, Medium ~8-11px, Minor ~8px z12+; scaled ÷ 4.5
+.sz_water_lbl <- function(zoom, cls) {
+  if (is.na(cls) || cls == 0L)       # Major
+    approx(c(8,9,10,11,12,13,14), c(1.4,1.6,1.8,2.0,2.2,2.4,2.6), xout=zoom, rule=2)$y
+  else if (cls == 1L)                # Medium
+    approx(c(9,10,11,12,13,14),   c(1.2,1.4,1.6,1.8,2.0,2.2),     xout=zoom, rule=2)$y
+  else                               # Minor
+    approx(c(12,13,14),           c(1.0,1.2,1.4),                  xout=zoom, rule=2)$y
+}
+
+# Monument / state park labels — national parks largest, minor parks smallest
+# JSON: Natl Parks ~14-18px z8-13+, State Parks ~10-14px z10-13+; scaled ÷ 4.5
+.sz_monument_lbl <- function(zoom, cls) {
+  if (is.na(cls) || cls == 0L)       # National parks / major monuments
+    approx(c(8,9,10,11,12,13), c(1.6,1.9,2.2,2.5,2.8,3.0), xout=zoom, rule=2)$y
+  else if (cls == 1L)                # Major state parks / minor monuments
+    approx(c(9,10,11,12,13),   c(1.4,1.6,1.8,2.0,2.2),     xout=zoom, rule=2)$y
+  else                               # Remaining parks
+    approx(c(11,12,13),        c(1.2,1.4,1.6),              xout=zoom, rule=2)$y
+}
+
+# Park / cemetery / golf / ski labels — small feature labels z10-13+
+# JSON: ~9-11px at z13-15; scaled ÷ 4.5
+.sz_park_lbl <- function(zoom) {
+  approx(c(10,13,14,15), c(1.3,1.6,1.9,2.1), xout=zoom, rule=2)$y
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -767,7 +805,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   transit   <- .fetch_transit(bu, zoom)
   buildings <- .fetch_buildings(bu, zoom)
   hillshade <- .fetch_hillshade(hu, zoom)
-  lbl_data  <- .fetch_labels(lu, zoom)
+  lbl_data  <- .fetch_labels(lu, bu, zoom)
 
   .v(sprintf("  counties=%d  hillshade=%d  roads=%d  interstates=%d",
      nrow(ground$counties), nrow(hillshade),
@@ -778,6 +816,9 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   .v(sprintf("  lbl_county=%d  lbl_city=%d  lbl_hwy=%d  lbl_street=%d",
      nrow(lbl_data$county), nrow(lbl_data$city),
      nrow(lbl_data$highway), nrow(lbl_data$street)))
+  .v(sprintf("  lbl_streams=%d  lbl_lakes=%d  lbl_monuments=%d  lbl_parks=%d  lbl_trails=%d",
+     nrow(lbl_data$streams), nrow(lbl_data$lakes),
+     nrow(lbl_data$monuments), nrow(lbl_data$parks), nrow(lbl_data$trails)))
 
   # — Post-process —
   counties <- ground$counties
@@ -1364,6 +1405,95 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   }
 
   # ─ LABELS ────────────────────────────────────────────────────────────────
+  # Feature labels drawn first (below city/county labels in z-order)
+
+  # 15a. Great Salt Lake label — italic, water colour, z≥7
+  if (nrow(lbl_data$gsl) > 0 && any(!is.na(lbl_data$gsl$map_label))) {
+    gsl_lbl <- extract_label_coords(lbl_data$gsl)
+    p <- .lbl(p, gsl_lbl, col=.C_WATER_LBL, halo=.C_WATER_HALO,
+               sz=.sz_water_lbl(zoom, 0L), face="italic", fam=.F_STREET)
+  }
+
+  # 15b. Lake labels — italic, water colour, z≥8 for major; minor z≥11
+  if (nrow(lbl_data$lakes) > 0 && any(!is.na(lbl_data$lakes$map_label))) {
+    lake_lbl <- extract_label_coords(lbl_data$lakes)
+    # Filter by label class for appropriate zoom
+    cls_lake <- suppressWarnings(as.integer(lake_lbl$map_label_class))
+    cls_lake[is.na(cls_lake)] <- 0L
+    lake_lbl <- lake_lbl[(cls_lake == 0L & zoom >= 8)  |
+                          (cls_lake == 1L & zoom >= 9)  |
+                          (cls_lake >= 2L & zoom >= 11), ]
+    if (nrow(lake_lbl) > 0 && any(!is.na(lake_lbl$map_label))) {
+      sz_lake <- .sz_water_lbl(zoom, suppressWarnings(as.integer(median(cls_lake[cls_lake >= 0], na.rm=TRUE))))
+      p <- .lbl(p, lake_lbl, col=.C_WATER_LBL, halo=.C_WATER_HALO,
+                 sz=sz_lake, face="italic", fam=.F_STREET)
+    }
+  }
+
+  # 15c. Stream labels — italic, water colour, major z≥8 down to minor z≥12
+  if (nrow(lbl_data$streams) > 0 && any(!is.na(lbl_data$streams$map_label))) {
+    stm_lbl <- extract_label_coords(lbl_data$streams)
+    cls_stm <- suppressWarnings(as.integer(stm_lbl$map_label_class))
+    cls_stm[is.na(cls_stm)] <- 0L
+    stm_lbl <- stm_lbl[(cls_stm == 0L & zoom >= 8)  |
+                         (cls_stm == 1L & zoom >= 9)  |
+                         (cls_stm >= 2L & zoom >= 12), ]
+    if (nrow(stm_lbl) > 0 && any(!is.na(stm_lbl$map_label))) {
+      sz_stm <- .sz_water_lbl(zoom, suppressWarnings(as.integer(median(cls_stm, na.rm=TRUE))))
+      p <- .lbl(p, stm_lbl, col=.C_WATER_LBL, halo=.C_WATER_HALO,
+                 sz=sz_stm, face="italic", fam=.F_STREET)
+    }
+  }
+
+  # 15d. Monument / state park labels — national parks z≥8, state parks z≥10, minor z≥11
+  if (nrow(lbl_data$monuments) > 0 && any(!is.na(lbl_data$monuments$map_label))) {
+    mon_lbl <- extract_label_coords(lbl_data$monuments)
+    cls_mon <- suppressWarnings(as.integer(mon_lbl$map_label_class))
+    cls_mon[is.na(cls_mon)] <- 2L
+    mon_lbl <- mon_lbl[(cls_mon == 0L & zoom >= 8)  |
+                         (cls_mon == 1L & zoom >= 10) |
+                         (cls_mon >= 2L & zoom >= 11), ]
+    if (nrow(mon_lbl) > 0 && any(!is.na(mon_lbl$map_label))) {
+      sz_mon <- .sz_monument_lbl(zoom, suppressWarnings(as.integer(median(cls_mon, na.rm=TRUE))))
+      p <- .lbl(p, mon_lbl, col=.C_MON_LBL, halo=.C_MON_HALO,
+                 sz=sz_mon, face="bold", fam=.F_STREET)
+    }
+  }
+
+  # 15e. Park labels — z≥13
+  if (nrow(lbl_data$parks) > 0 && any(!is.na(lbl_data$parks$map_label))) {
+    park_lbl <- extract_label_coords(lbl_data$parks)
+    p <- .lbl(p, park_lbl, col=.C_PARK_LBL, halo=.C_PARK_HALO,
+               sz=.sz_park_lbl(zoom), face="bold", fam=.F_STREET)
+  }
+
+  # 15f. Golf course labels — z≥13
+  if (nrow(lbl_data$golf) > 0 && any(!is.na(lbl_data$golf$map_label))) {
+    golf_lbl <- extract_label_coords(lbl_data$golf)
+    p <- .lbl(p, golf_lbl, col=.C_PARK_LBL, halo=.C_PARK_HALO,
+               sz=.sz_park_lbl(zoom), face="italic", fam=.F_STREET)
+  }
+
+  # 15g. Cemetery labels — z≥10
+  if (nrow(lbl_data$cemeteries) > 0 && any(!is.na(lbl_data$cemeteries$map_label))) {
+    cem_lbl <- extract_label_coords(lbl_data$cemeteries)
+    p <- .lbl(p, cem_lbl, col=.C_PARK_LBL, halo=.C_PARK_HALO,
+               sz=.sz_park_lbl(zoom), face="italic", fam=.F_STREET)
+  }
+
+  # 15h. Trail labels — z≥14 (line-placement not supported; use centroid)
+  if (nrow(lbl_data$trails) > 0 && any(!is.na(lbl_data$trails$map_label))) {
+    trail_lbl <- extract_label_coords(lbl_data$trails)
+    p <- .lbl(p, trail_lbl, col=.C_PARK_LBL, halo=.C_PARK_HALO,
+               sz=.sz_park_lbl(zoom), face="italic", fam=.F_STREET)
+  }
+
+  # 15i. Ski area labels — z≥13
+  if (nrow(lbl_data$ski) > 0 && any(!is.na(lbl_data$ski$map_label))) {
+    ski_lbl <- extract_label_coords(lbl_data$ski)
+    p <- .lbl(p, ski_lbl, col=.C_SKI_LBL, halo=.C_SKI_HALO,
+               sz=.sz_park_lbl(zoom), face="italic", fam=.F_STREET)
+  }
 
   # 15. County labels — Poller One, light text on gray halo
   if (nrow(cnty_lbl) > 0 && any(!is.na(cnty_lbl$map_label))) {
