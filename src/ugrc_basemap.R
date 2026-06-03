@@ -539,12 +539,19 @@ safe_read_mvt <- function(url, layer_name) {
   }
   lyr$map_symbol <- if (length(sy) > 0) as.character(lyr[[sy[1]]]) else "0"
 
-  # Do NOT transform here.  GDAL's MVT driver returns OGC:CRS84 (lon/lat degrees)
-  # but the PROJ axis-order rules for EPSG:4326 vs CRS84 cause st_transform(→3857)
-  # to flip coordinates to the wrong hemisphere.  Layers are kept in their native
-  # CRS (4326/CRS84).  build_ugrc_map clips them to bbox_disp using a 4326 bbox,
-  # and coord_sf(crs=3857, default_crs=4326) reprojects sf layers for display and
-  # places non-sf label x/y (in degrees) at their correct lon/lat positions.
+  # ESRI ArcGIS vector tile server returns EPSG:3857 data with non-standard axis
+  # convention: stored (x, y) = (−northing, −easting) instead of (easting, northing).
+  # Corrected via PROJ coordinate operation: axisswap order=−2,−1 swaps axes and
+  # reverses both signs in one step, yielding standard EPSG:3857 (easting, northing).
+  #   new_x = −y_stored = −(−easting) = easting   ✓
+  #   new_y = −x_stored = −(−northing) = northing  ✓
+  if (isTRUE(sf::st_crs(lyr)$epsg == 3857L)) {
+    lyr <- sf::st_transform(
+      lyr,
+      crs      = sf::st_crs(3857L),
+      pipeline = "+proj=pipeline +step +proj=axisswap +order=-2,-1"
+    )
+  }
 
   lyr
 }
