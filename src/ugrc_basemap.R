@@ -983,7 +983,7 @@ extract_label_coords <- function(sf_obj) {
   if (nrow(trax) == 0) {
     return(trax)
   }
-  trax <- trax %>%
+  trax <- trax |>
     dplyr::mutate(
       trax_color = dplyr::case_when(
         map_symbol %in% c("0", "1", "2") ~ .C_TRAX_BLU,
@@ -3040,7 +3040,7 @@ build_ugrc_map <- function(bbox, zoom, crs = 3857L, verbose = FALSE) {
 
   # 17. Highway labels — per-class colour, zoom-interpolated size
   if (nrow(hwy_lbl) > 0 && any(!is.na(hwy_lbl$map_label))) {
-    hwy_lbl <- hwy_lbl %>%
+    hwy_lbl <- hwy_lbl |>
       dplyr::mutate(
         lbl_col = dplyr::case_when(
           map_label_class == 0 ~ .C_HWY_INT,

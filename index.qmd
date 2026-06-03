@@ -910,11 +910,17 @@ source("src/ugrc_basemap.R")
 ugrc_map_init()
 
 # ── Basemap cache — single RDS ────────────────────────────────────────────────
-# All basemap ggplots stored as a named list: data/remotes/basemap_cache.rds
-# Key = GEOID. Run maps-basemap-cache to populate; make_tract_map falls back to
-# live generation for any GEOID not yet in the cache.
-.bm_cache_path <- file.path(remotes_dir, "basemap_cache.rds")
-basemap_cache  <- if (file.exists(.bm_cache_path)) readRDS(.bm_cache_path) else list()
+# All basemap ggplots stored as a named list keyed by GEOID.
+# Lives in data/map_cache/ which IS git-tracked (not data/remotes/ which is not).
+.bm_cache_path <- "data/map_cache/basemap_cache.rds"
+basemap_cache  <- if (file.exists(.bm_cache_path)) {
+  message(sprintf("[cache] Loaded basemap_cache.rds — %d entries",
+                  length(readRDS(.bm_cache_path))))
+  readRDS(.bm_cache_path)
+} else {
+  message("[cache] basemap_cache.rds not found — run maps-basemap-cache chunk to build it")
+  list()
+}
 
 # ── Shared geometry helper ────────────────────────────────────────────────────
 # Returns the expanded bbox (as sf::st_bbox with CRS attached) and zoom level
@@ -953,6 +959,8 @@ basemap_cache  <- if (file.exists(.bm_cache_path)) readRDS(.bm_cache_path) else 
 
 make_tract_map <- function(geoid, map_crs = 3857L) {
   map_crs_sf <- sf::st_crs(map_crs)
+  epsg_label <- if (!is.na(map_crs_sf$epsg)) paste0("EPSG:", map_crs_sf$epsg) else "custom CRS"
+  message(sprintf("[make_tract_map] geoid=%s  crs=%s", geoid, epsg_label))
 
   # 1. All overlay layers in map_crs
   focal      <- sf::st_transform(dplyr::filter(oz_tracts, GEOID == geoid),     map_crs_sf)
@@ -967,6 +975,9 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
   exp_bbox <- geo$bbox        # sf::st_bbox in map_crs
   zoom     <- geo$zoom
   view     <- sf::st_as_sfc(exp_bbox)
+  message(sprintf("[make_tract_map] zoom=%d  bbox xmin=%.0f ymin=%.0f xmax=%.0f ymax=%.0f",
+                  zoom, exp_bbox[["xmin"]], exp_bbox[["ymin"]],
+                  exp_bbox[["xmax"]], exp_bbox[["ymax"]]))
 
   # Spatial filter to view extent (all layers now share map_crs)
   wc_view    <- sf::st_filter(wc_all,    view)
@@ -975,12 +986,18 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
   stops_view <- sf::st_filter(stops_all, view)
   sap_view   <- sf::st_filter(sap_all,   view)
   sap_diss   <- if (nrow(sap_view) > 0L) sf::st_union(sap_view) else sap_view
+  message(sprintf("[make_tract_map] overlay features in view — wc=%d  other_oz=%d  exits=%d  stops=%d  sap=%d",
+                  nrow(wc_view), nrow(other_view), nrow(exits_view),
+                  nrow(stops_view), nrow(sap_view)))
 
   # 3. Basemap — load from cache or generate live
   bm <- basemap_cache[[geoid]]
   if (is.null(bm)) {
-    message("Basemap not cached for ", geoid, " — generating live (run maps-basemap-cache to persist)")
-    bm <- build_ugrc_map(exp_bbox, zoom, crs = map_crs)
+    message(sprintf("[make_tract_map] cache MISS — calling build_ugrc_map(verbose=TRUE)"))
+    bm <- build_ugrc_map(exp_bbox, zoom, crs = map_crs, verbose = TRUE)
+    message(sprintf("[make_tract_map] build_ugrc_map returned ggplot with %d layer(s)", length(bm$layers)))
+  } else {
+    message(sprintf("[make_tract_map] cache HIT — basemap loaded (%d layer(s))", length(bm$layers)))
   }
 
   # 4. Add OZ layers on top with +; coord_sf crops to tract extent and
