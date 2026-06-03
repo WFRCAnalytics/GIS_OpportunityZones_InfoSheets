@@ -1,7 +1,7 @@
 # ugrc_basemap.R — Full UGRC LiteBase / LiteLabels / VectorHillshade basemap
 # Implements all visual layers from root-LightBase.json, root-LiteLabels.json,
 # and root-VectorHillshade.json as a ggplot2 map for any lon/lat/zoom.
-# No shadowtext dependency — text halos drawn with double geom_text pass.
+# Label halos via shadowtext::geom_shadowtext (bg.color = JSON text-halo-color).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 1. PACKAGES & FONTS
@@ -65,12 +65,16 @@ showtext_auto()
 .C_SKI_BDR <- "#999796"
 
 # National Monuments / State Parks
-.C_NM_OUTER <- rgb(204, 197, 194, 191, maxColorValue = 255) # 0.75
-.C_NM_MID <- "#C7C0BD"
-.C_NM_INNER <- "#999391"
-.C_SP_OUTER <- rgb(199, 199, 199, 191, maxColorValue = 255) # 0.75
-.C_SP_MID <- "#B6BCBF"
-.C_SP_BDR <- "#8C867E"
+.C_NM_OUTER  <- rgb(204, 197, 194, 191, maxColorValue = 255)  # 0.75
+.C_NM_MID    <- "#C7C0BD"
+.C_NM_INNER  <- "#999391"   # National Monument inner / State Park z11+ inner
+.C_SP_OUTER  <- rgb(199, 199, 199, 191, maxColorValue = 255)  # 0.75
+.C_SP_MID    <- "#B6BCBF"
+.C_SP_BDR    <- "#8C867E"   # State Park z13+ inner border
+.C_SP_INNER  <- "#8C867E"   # State Park z8-11 inner (JSON: #8C867E, sym 1 z8-11)
+
+# Cemetery outline differs from golf/park: JSON rgba(104,128,57,0.4) vs golf rgba(106,128,64,0.4)
+.C_CEMETERY_BDR <- rgb(104, 128, 57, 102, maxColorValue = 255)  # rgba(104,128,57,0.4)
 
 # Contours
 .C_CTR_MINOR <- "#805E4D" # 50 / 100 / 200 / 250 ft
@@ -142,9 +146,10 @@ showtext_auto()
   "3" = rgb(179, 134, 149, 51, maxColorValue = 255)
 )
 
-# Buildings — JSON: fill #F2F0ED; border rgba(128,123,121,0.25)
+# Buildings — JSON fill #F2F0ED; border = line layer rgba(140,133,133,0.35)
+# (NOT the shadow fill rgba(128,123,121,0.25) which is a separate layer)
 .C_BLDG_FILL <- "#F2F0ED"
-.C_BLDG_BDR <- rgb(128, 123, 121, 64, maxColorValue = 255) # 0.25
+.C_BLDG_BDR  <- rgb(140, 133, 133, 89, maxColorValue = 255)  # rgba(140,133,133,0.35)
 
 # Roads
 .C_ROAD_CAS <- "#B3B3B3"
@@ -155,11 +160,16 @@ showtext_auto()
 # Transit
 .C_TR_CAS <- "#B2B2B2"
 .C_TR_FIL <- "#FFFFFF"
-.C_TRAX_BLU <- "#597EB3"
-.C_TRAX_GRN <- "#60BF4D"
-.C_TRAX_RED <- "#CC666F"
-.C_TRAX_SLN <- "#79DEF2"
-.C_TRAX_DEF <- "#828282"
+# TRAX dashed line colours: JSON uses 0.8 opacity on all coloured lines
+# Blue (sym 0-2): rgba(89,126,179,0.8); Green (sym 3-4): rgba(96,191,77,0.8)
+# Green alt (sym 5): rgba(72,191,48,0.8); Red (sym 6-8): rgba(204,102,111,0.8)
+# S-Line (sym 9): rgba(121,222,242,0.8); Default (sym 10): #828282 solid, no alpha
+.C_TRAX_BLU  <- rgb( 89, 126, 179, 204, maxColorValue = 255)  # rgba(89,126,179,0.8)
+.C_TRAX_GRN  <- rgb( 96, 191,  77, 204, maxColorValue = 255)  # rgba(96,191,77,0.8) sym 3-4
+.C_TRAX_GRN5 <- rgb( 72, 191,  48, 204, maxColorValue = 255)  # rgba(72,191,48,0.8) sym 5
+.C_TRAX_RED  <- rgb(204, 102, 111, 204, maxColorValue = 255)  # rgba(204,102,111,0.8)
+.C_TRAX_SLN  <- rgb(121, 222, 242, 204, maxColorValue = 255)  # rgba(121,222,242,0.8)
+.C_TRAX_DEF  <- "#828282"   # sym 10: solid gray, no dashed overlay
 .C_FRONTRUNNER <- "#D2ACE6"
 
 # Labels — exact JSON values
@@ -176,8 +186,8 @@ showtext_auto()
 .C_STR_HALO <- rgb(230, 228, 225, 153, maxColorValue = 255) # rgba(230,228,225,0.60)
 
 # Feature labels — from JSON paint properties
-.C_WATER_LBL <- "#829599" # streams, lakes (blue-gray)
-.C_WATER_HALO <- rgb(240, 248, 248, 140, maxColorValue = 255) # very light aqua halo
+.C_WATER_LBL  <- "#829599"                                      # streams, lakes (blue-gray)
+.C_WATER_HALO <- rgb(194, 204, 204, 128, maxColorValue = 255)   # rgba(194,204,204,0.5) from JSON
 .C_PARK_LBL <- "#8C8C77" # parks, golf, cemeteries
 .C_PARK_HALO <- rgb(235, 235, 220, 128, maxColorValue = 255) # warm-gray halo
 .C_MON_LBL <- "#807E7D" # monuments, state parks
@@ -351,8 +361,9 @@ safe_read_mvt <- function(url, layer_name) {
     NA_real_
   }
 
-  # Standardise symbol (broad match for _symbol, symbolID, etc.)
-  sy <- grep("symbol", cn, ignore.case = TRUE, value = TRUE)
+  # Standardise symbol — try exact _symbol / symbol first; broad fallback for edge cases
+  sy <- grep("^_?symbol$", cn, ignore.case = TRUE, value = TRUE)
+  if (length(sy) == 0) sy <- grep("symbol", cn, ignore.case = TRUE, value = TRUE)
   lyr$map_symbol <- if (length(sy) > 0) as.character(lyr[[sy[1]]]) else "0"
 
   lyr
@@ -473,13 +484,13 @@ extract_label_coords <- function(sf_obj) {
     } else {
       .empty_sf()
     },
-    rail_stops = if (zoom >= 12) {
-      safe_read_mvt(bu, "LightRailStations_UTA")
+    rail_stops = if (zoom >= 14) {
+      safe_read_mvt(bu, "LightRailStations_UTA")    # JSON minzoom: 14
     } else {
       .empty_sf()
     },
-    cr_stops = if (zoom >= 12) {
-      safe_read_mvt(bu, "CommuterRailStops_UTA")
+    cr_stops = if (zoom >= 14) {
+      safe_read_mvt(bu, "CommuterRailStops_UTA")    # JSON minzoom: 14
     } else {
       .empty_sf()
     }
@@ -583,10 +594,11 @@ extract_label_coords <- function(sf_obj) {
     dplyr::mutate(
       trax_color = dplyr::case_when(
         map_symbol %in% c("0", "1", "2") ~ .C_TRAX_BLU,
-        map_symbol %in% c("3", "4", "5") ~ .C_TRAX_GRN,
+        map_symbol %in% c("3", "4")      ~ .C_TRAX_GRN,
+        map_symbol == "5"                ~ .C_TRAX_GRN5,  # distinct shade in JSON
         map_symbol %in% c("6", "7", "8") ~ .C_TRAX_RED,
-        map_symbol == "9" ~ .C_TRAX_SLN,
-        TRUE ~ .C_TRAX_DEF
+        map_symbol == "9"                ~ .C_TRAX_SLN,
+        TRUE                             ~ .C_TRAX_DEF
       ),
       pixel_offset = dplyr::case_when(
         map_symbol == "1" ~ -2.33,
@@ -629,7 +641,8 @@ extract_label_coords <- function(sf_obj) {
   } else if (sym == 1L) {
     approx(c(11, 13, 14), c(1.0, 1.0, 1.33), xout = zoom, rule = 2)$y * 0.15
   } else {
-    0.67 * 0.15
+    # JSON: 0.667px at z12-14, 1.0px at z14+ → 0.10 / 0.15 scaled
+    if (zoom >= 14L) 1.0 * 0.15 else 0.667 * 0.15
   }
 }
 
@@ -731,15 +744,26 @@ extract_label_coords <- function(sf_obj) {
 # Zoom stops derived directly from each JSON label layer definition.
 
 .sz_county <- function(cls) {
-  if (cls <= 1L) {
-    # JSON 24px   → ~5.5 units
-    5.5
-  } else if (cls == 2L) {
-    # JSON 26.67px → ~5.8
-    5.8
-  } else {
-    2.0
-  } # JSON 10.67px → ~2.4 (using 2.0 for Poller weight)
+  if      (cls <= 1L) 5.5   # JSON 24px    / 4.36 ≈ 5.5
+  else if (cls == 2L) 5.8   # JSON 26.67px / 4.6  ≈ 5.8
+  else                2.4   # JSON 10.67px / 4.5  ≈ 2.4  (corrected from 2.0)
+}
+
+# TRAX linewidths — zoom-interpolated from JSON z12-14 / z14-16 / z16+ bands
+# JSON: casing 2.67/3.17/3.67px; fill 1.33/1.83/2.33px → scaled ×0.15
+.trax_lw <- function(zoom, type = "cas") {
+  approx(c(12, 14, 16),
+         if (type == "cas") c(0.40, 0.48, 0.55)
+         else                c(0.20, 0.27, 0.35),
+         xout = zoom, rule = 2)$y
+}
+
+# TRAX dashed linetype changes with zoom (JSON dasharray shrinks as zoom increases)
+# z12-14: [5,3] ≈ "53"; z14-16: [3.64,2.18] ≈ "42"; z16+: [2.86,1.71] ≈ "32"
+.trax_lty <- function(zoom) {
+  if      (zoom < 14) "53"
+  else if (zoom < 16) "42"
+  else                "32"
 }
 
 .sz_city <- function(zoom, cls) {
@@ -1026,13 +1050,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     any(roads$map_symbol %in% as.character(road_draw_order))
   road_fallback <- nrow(roads) > 0 && !road_sym_known
 
-  m2_ow <- if (zoom >= 15) {
-    0.80
-  } else if (zoom >= 13) {
-    0.67
-  } else {
-    0.47
-  }
+  # Carto:2 outer stroke width — JSON z12-13=4.67px→0.70, z13-15=6.67px→1.00, z15+=8px→1.20
+  m2_ow <- if (zoom >= 15) 1.20 else if (zoom >= 13) 1.00 else 0.70
 
   # Label data
   cnty_lbl <- extract_label_coords(.filter_county_labels(lbl_data$county, zoom))
@@ -1219,13 +1238,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
 
   # 5. Parks & recreation fills
   if (nrow(rec$cemeteries) > 0) {
+    # Cemeteries outline: JSON rgba(104,128,57,0.4) — distinct from golf rgba(106,128,64,0.4)
     p <- p +
-      ggplot2::geom_sf(
-        data = rec$cemeteries,
-        fill = .C_PARK_FILL,
-        color = .C_PARK_BDR,
-        linewidth = 0.10
-      )
+      ggplot2::geom_sf(data = rec$cemeteries, fill = .C_PARK_FILL,
+                       color = .C_CEMETERY_BDR, linewidth = 0.10)
   }
   if (nrow(rec$golf) > 0) {
     p <- p +
@@ -1246,93 +1262,38 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
-  # National monuments — 3-stroke at z13+, 2-stroke below
+  # National Monuments (sym 0) — 3-stroke at z13+, 2-stroke z10-13, 1-stroke z8-10
+  # JSON px → scaled ×0.15: outer 8→1.20, mid 4→0.60, inner 0.67→0.10
   if (nrow(mon_natl) > 0) {
     if (zoom >= 13) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_OUTER,
-          linewidth = 0.80
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_MID,
-          linewidth = 0.50
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = 0.10
-        )
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color=.C_NM_OUTER, linewidth=1.20)
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color=.C_NM_MID,   linewidth=0.60)
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color=.C_NM_INNER, linewidth=0.10)
     } else if (zoom >= 10) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = "#C7C0BD",
-          linewidth = 0.50
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = 0.10
-        )
+      # z10-13: outer 5.33→0.80, inner 0.67→0.10
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color="#C7C0BD",   linewidth=0.80)
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color=.C_NM_INNER, linewidth=0.10)
     } else {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = "#CCC5C2",
-          linewidth = 0.35
-        )
+      # z8-10: outer 3.33→0.50
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color="#CCC5C2",   linewidth=0.50)
+      p <- p + ggplot2::geom_sf(data=mon_natl, fill=NA, color=.C_NM_INNER, linewidth=0.10)
     }
   }
+  # State Parks (sym 1) — 3-stroke at z13+, 2-stroke z8-13
+  # JSON px: outer 8→1.20, mid 2.67→0.40, inner 1.0→0.15 at z13+
   if (nrow(mon_sp) > 0) {
     if (zoom >= 13) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_OUTER,
-          linewidth = 0.80
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_MID,
-          linewidth = 0.35
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = 0.13
-        )
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_OUTER, linewidth=1.20)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_MID,   linewidth=0.40)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_BDR,   linewidth=0.15)
+    } else if (zoom >= 11) {
+      # z11-13: outer 4→0.60, inner 0.67→0.10 (inner = #999391)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_MID,   linewidth=0.60)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_NM_INNER, linewidth=0.10)
     } else {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_MID,
-          linewidth = 0.35
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_BDR,
-          linewidth = 0.10
-        )
+      # z8-11: outer 3.33→0.50, inner 0.67→0.10 (inner = #8C867E per JSON)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_MID,   linewidth=0.50)
+      p <- p + ggplot2::geom_sf(data=mon_sp, fill=NA, color=.C_SP_INNER, linewidth=0.10)
     }
   }
   if (nrow(rec$ski) > 0) {
@@ -1382,29 +1343,17 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   }
 
   # 7. Municipalities Carto:2 (type-coded fills + two-stroke borders)
+  # sym 0 outer stroke: z<15 = rgba(160,134,179,0.15), z15+ = rgba(144,120,161,0.15)
+  .m2_out0 <- if (zoom >= 15) .C_M2_OUT[["0"]]
+              else rgb(160, 134, 179, 38, maxColorValue = 255)  # rgba(160,134,179,0.15)
   if (nrow(muni$muni2) > 0) {
     for (sv in c("0", "1", "2", "3")) {
-      msf <- muni$muni2[
-        !is.na(muni$muni2$map_symbol) & muni$muni2$map_symbol == sv,
-      ]
-      if (nrow(msf) == 0) {
-        next
-      }
-      p <- p + ggplot2::geom_sf(data = msf, fill = .C_M2_FILL, color = NA)
-      p <- p +
-        ggplot2::geom_sf(
-          data = msf,
-          fill = NA,
-          color = .C_M2_OUT[[sv]],
-          linewidth = m2_ow
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = msf,
-          fill = NA,
-          color = .C_M2_IN[[sv]],
-          linewidth = 0.27
-        )
+      msf <- muni$muni2[!is.na(muni$muni2$map_symbol) & muni$muni2$map_symbol == sv, ]
+      if (nrow(msf) == 0) next
+      out_col <- if (sv == "0") .m2_out0 else .C_M2_OUT[[sv]]
+      p <- p + ggplot2::geom_sf(data=msf, fill=.C_M2_FILL, color=NA)
+      p <- p + ggplot2::geom_sf(data=msf, fill=NA, color=out_col,        linewidth=m2_ow)
+      p <- p + ggplot2::geom_sf(data=msf, fill=NA, color=.C_M2_IN[[sv]], linewidth=0.27)
     }
   }
 
@@ -1499,93 +1448,55 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
   }
 
-  # 12. Trails
+  # 12. Trails — JSON z14-15: outer 3px→0.45, fill 1.33px→0.20; z15+: 3.33→0.50, 1.67→0.25
   if (nrow(rec$trails) > 0) {
-    tw <- if (zoom >= 15) 0.33 else 0.30
-    tf <- if (zoom >= 15) 0.17 else 0.13
-    p <- p +
-      ggplot2::geom_sf(
-        data = rec$trails,
-        color = .C_TRAIL_CAS,
-        linewidth = tw,
-        linetype = "11"
-      )
-    p <- p +
-      ggplot2::geom_sf(
-        data = rec$trails,
-        color = .C_ROAD_FIL,
-        linewidth = tf,
-        linetype = "11"
-      )
+    tw <- if (zoom >= 15) 0.50 else 0.45
+    tf <- if (zoom >= 15) 0.25 else 0.20
+    p <- p + ggplot2::geom_sf(data=rec$trails, color=.C_TRAIL_CAS, linewidth=tw, linetype="11")
+    p <- p + ggplot2::geom_sf(data=rec$trails, color=.C_ROAD_FIL,  linewidth=tf, linetype="11")
   }
 
-  # 12b. Ski lifts — #BF8F8F, dasharray [18,3,1,3], width 1.33px → 0.20mm, z≥12
+  # 12b. Ski lifts — JSON #BF8F8F dasharray [18,3,1,3], width 1.33px→0.20mm, z≥12
+  # "F313" is the closest ggplot2 hex linetype encoding of [15,3,1,3] (18 capped at F=15)
   if (nrow(poi$ski_lifts) > 0)
     p <- p + ggplot2::geom_sf(data=poi$ski_lifts, color=.C_SKI_LIFT_LINE,
-               linewidth=0.20, linetype="twodash")
+               linewidth=0.20, linetype="F313")
 
   # 13. Transit — commuter rail
+  # JSON: casing #B2B2B2 3.33px→0.50, fill #FFFFFF 1.67px→0.25, dashed #D2ACE6 1.67px dasharray[4,2.4]
   if (nrow(transit$commuter_rail) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$commuter_rail,
-        color = .C_TR_CAS,
-        linewidth = 1.2
-      )
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$commuter_rail,
-        color = .C_TR_FIL,
-        linewidth = 0.6
-      )
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$commuter_rail,
-        color = .C_FRONTRUNNER,
-        linewidth = 0.6,
-        linetype = "42"
-      )
+    p <- p + ggplot2::geom_sf(data=transit$commuter_rail, color=.C_TR_CAS,      linewidth=0.50)
+    p <- p + ggplot2::geom_sf(data=transit$commuter_rail, color=.C_TR_FIL,      linewidth=0.25)
+    p <- p + ggplot2::geom_sf(data=transit$commuter_rail, color=.C_FRONTRUNNER, linewidth=0.25, linetype="42")
   }
 
-  # TRAX — loop per colour to avoid scale conflicts
+  # TRAX — zoom-interpolated widths; zoom-dependent dasharray; sym 10 solid only
   if (nrow(trax) > 0) {
+    lw_cas  <- .trax_lw(zoom, "cas")
+    lw_fil  <- .trax_lw(zoom, "fil")
+    trax_lt <- .trax_lty(zoom)
     for (cv in unique(trax$trax_color)) {
       tr_sub <- trax[trax$trax_color == cv, ]
-      p <- p +
-        ggplot2::geom_sf(data = tr_sub, color = .C_TR_CAS, linewidth = 1.0)
-      p <- p +
-        ggplot2::geom_sf(data = tr_sub, color = .C_TR_FIL, linewidth = 0.5)
-      p <- p +
-        ggplot2::geom_sf(
-          data = tr_sub,
-          color = cv,
-          linewidth = 0.5,
-          linetype = "53"
-        )
+      p <- p + ggplot2::geom_sf(data=tr_sub, color=.C_TR_CAS, linewidth=lw_cas)
+      p <- p + ggplot2::geom_sf(data=tr_sub, color=.C_TR_FIL, linewidth=lw_fil)
+      if (cv != .C_TRAX_DEF) {
+        # All named lines: coloured dashed overlay with 0.8 alpha embedded in colour
+        p <- p + ggplot2::geom_sf(data=tr_sub, color=cv, linewidth=lw_fil, linetype=trax_lt)
+      } else {
+        # sym 10 (unknown/default): JSON shows single solid #828282 line, no dashed overlay
+        p <- p + ggplot2::geom_sf(data=tr_sub, color=cv, linewidth=lw_cas)
+      }
     }
   }
-  if (nrow(transit$rail_stops) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$rail_stops,
-        shape = 21,
-        size = 1.8,
-        fill = "white",
-        color = .C_TRAX_BLU,
-        stroke = 0.5
-      )
-  }
-  if (nrow(transit$cr_stops) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$cr_stops,
-        shape = 21,
-        size = 1.8,
-        fill = "white",
-        color = "#9B7BBD",
-        stroke = 0.5
-      )
-  }
+
+  # Rail/commuter stops — JSON: invisible icon + text label (minzoom 14)
+  # Rendered as small points; labels come from their map_label field in the label draw section
+  if (nrow(transit$rail_stops) > 0)
+    p <- p + ggplot2::geom_sf(data=transit$rail_stops, shape=21, size=1.2,
+               fill="white", color=alpha("#597EB3", 0.8), stroke=0.4)
+  if (nrow(transit$cr_stops) > 0)
+    p <- p + ggplot2::geom_sf(data=transit$cr_stops,  shape=21, size=1.2,
+               fill="white", color=alpha("#9B7BBD", 0.8), stroke=0.4)
 
   # 14. Buildings
   if (nrow(buildings) > 0) {
@@ -1871,36 +1782,23 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   }
 
   # 15. County labels — Poller One, light text on gray halo
-  # Word-wrap county names to match Mapbox GL's text-max-width behaviour.
-  # The web renderer wraps "Salt Lake" → "Salt\nLake" at ~8-char line width.
+  # Word-wrap to match Mapbox GL text-max-width; draw per label_class so each
+  # county gets its own correct text size and colour (not a batch median).
   if (nrow(cnty_lbl) > 0 && any(!is.na(cnty_lbl$map_label))) {
-    cnty_lbl$map_label <- vapply(
-      cnty_lbl$map_label,
-      function(x) {
-        if (is.na(x)) {
-          return(NA_character_)
-        }
-        paste(strwrap(x, width = 8L), collapse = "\n")
-      },
-      character(1L)
-    )
-    cls_i <- as.integer(suppressWarnings(median(
-      cnty_lbl$map_label_class,
-      na.rm = TRUE
-    )))
-    if (is.na(cls_i)) {
-      cls_i <- 3L
+    cnty_lbl$map_label <- vapply(cnty_lbl$map_label, function(x) {
+      if (is.na(x)) return(NA_character_)
+      paste(strwrap(x, width = 8L), collapse = "\n")
+    }, character(1L))
+    cnty_lbl$cls_i <- as.integer(
+      suppressWarnings(cnty_lbl$map_label_class))
+    cnty_lbl$cls_i[is.na(cnty_lbl$cls_i)] <- 3L
+    for (ci in unique(cnty_lbl$cls_i)) {
+      sub_c <- cnty_lbl[!is.na(cnty_lbl$cls_i) & cnty_lbl$cls_i == ci, ]
+      if (nrow(sub_c) == 0 || !any(!is.na(sub_c$map_label))) next
+      lbl_col <- if (ci >= 3L) .C_CNTY_LO else .C_CNTY_HI
+      p <- .lbl(p, sub_c, col=lbl_col, halo=.C_CNTY_HALO,
+                 sz=.sz_county(ci), face="bold", fam=.F_COUNTY)
     }
-    lbl_col <- if (cls_i >= 3L) .C_CNTY_LO else .C_CNTY_HI
-    p <- .lbl(
-      p,
-      cnty_lbl,
-      col = lbl_col,
-      halo = .C_CNTY_HALO,
-      sz = .sz_county(cls_i),
-      face = "bold",
-      fam = .F_COUNTY
-    )
   }
 
   # 16. City / town labels
