@@ -256,11 +256,18 @@ showtext_auto()
 # sym 6 = Other Federal Aid, sym 7 = Local Roads
 
 .RSTOPS <- list(
-  `0` = list(
-    # Interstates (Roads - Interstates and Ramps - white version)
-    z = c(6, 8, 10, 12, 14, 16, 18),
+  # sym "0ir" = Roads-Interstates-and-Ramps layer (drawn AFTER buildings, JSON idx 362+)
+  `0ir` = list(
+    z   = c(  6,    8,   10,   12,   14,   16,   18),
     cas = c(3.00, 4.67, 6.67, 8.00, 9.33, 20.00, 26.67),
     fil = c(1.33, 2.67, 4.67, 6.00, 7.33, 17.33, 24.00)
+  ),
+  # sym "0" = Roads-white-version Interstates (drawn BEFORE buildings, JSON idx 232-253)
+  # Narrower than I+R; all integer zoom stops included so flat bands are exact.
+  `0` = list(
+    z   = c( 6,    7,    8,    9,   10,   11,   12,   13,   14,   15,   16,   17,   18),
+    cas = c(2.667,2.667,4.667,4.667,5.333,6.000,6.667,8.000,9.333,12.000,14.667,18.000,18.667),
+    fil = c(1.333,1.333,3.333,3.333,4.000,4.667,5.333,6.667,8.000,10.667,13.333,16.000,17.333)
   ),
   `1` = list(
     # Ramps and Collectors
@@ -1420,9 +1427,12 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
     roads[!is.na(roads$map_symbol) & roads$map_symbol == as.character(sym), ]
   }
-  road_draw_order <- c(2L, 3L, 4L, 5L, 6L, 7L, 1L)
+  # JSON casing bottom→top (sym 4 first/lowest, sym 0 last/topmost before buildings)
+  road_cas_order <- c(4L, 2L, 3L, 6L, 5L, 7L, 1L, 0L)
+  # JSON fill bottom→top (inverted from casing: local roads fill at bottom)
+  road_fil_order <- c(7L, 5L, 6L, 4L, 3L, 2L, 1L, 0L)
   road_sym_known <- nrow(roads) > 0 &&
-    any(roads$map_symbol %in% as.character(road_draw_order))
+    any(roads$map_symbol %in% as.character(road_cas_order))
   road_fallback <- nrow(roads) > 0 && !road_sym_known
 
   # Carto:2 outer stroke width — raw JSON px via .lw()
@@ -1882,16 +1892,9 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
-  # 10. Roads — CASING PASS (widest class first)
-  if (nrow(interstates) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = interstates,
-        color = .C_ROAD_CAS,
-        linewidth = .road_lw(zoom, 0, "cas")
-      )
-  }
-  for (si in road_draw_order) {
+  # 10. Roads — CASING PASS (JSON order: sym4 → sym2 → sym3 → sym6 → sym5 → sym7 → sym1 → sym0)
+  # Roads-white-version only (before buildings). I+R interstates are drawn after buildings.
+  for (si in road_cas_order) {
     if (zoom < .ROAD_MIN_ZOOM[as.character(si)]) {
       next
     }
@@ -1899,27 +1902,19 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     if (nrow(rd) == 0) {
       next
     }
+    cas_col <- if (si == 5L && zoom < 11L) "#BABABA"       # #12.3: sym5 z9-10 casing
+               else if (si == 6L && zoom < 11L) "#B0B0B0"  # #12.2: sym6 z10 hairline
+               else .C_ROAD_CAS
     p <- p +
       ggplot2::geom_sf(
         data = rd,
-        color = .C_ROAD_CAS,
+        color = cas_col,
         linewidth = .road_lw(zoom, si, "cas")
       )
   }
 
-  # 11. Roads — FILL PASS (white centre lines)
-  if (nrow(interstates) > 0) {
-    lwf <- .road_lw(zoom, 0, "fil")
-    if (lwf > 0) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = interstates,
-          color = .C_ROAD_FIL,
-          linewidth = lwf
-        )
-    }
-  }
-  for (si in road_draw_order) {
+  # 11. Roads — FILL PASS (JSON order: sym7 → sym5 → sym6 → sym4 → sym3 → sym2 → sym1 → sym0)
+  for (si in road_fil_order) {
     if (zoom < .ROAD_MIN_ZOOM[as.character(si)]) {
       next
     }
@@ -2068,6 +2063,18 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         color = .C_BLDG_BDR,
         linewidth = .lw(0.267)
       )
+  }
+
+  # 14a. I+R Interstates and Ramps — drawn AFTER buildings per JSON (idx 362+)
+  # Uses "0ir" key which has the wider I+R linewidths (distinct from Roads-white-version sym 0).
+  if (nrow(interstates) > 0) {
+    p <- p +
+      ggplot2::geom_sf(data = interstates, color = .C_ROAD_CAS, linewidth = .road_lw(zoom, "0ir", "cas"))
+    lw_ir_fil <- .road_lw(zoom, "0ir", "fil")
+    if (lw_ir_fil > 0) {
+      p <- p +
+        ggplot2::geom_sf(data = interstates, color = .C_ROAD_FIL, linewidth = lw_ir_fil)
+    }
   }
 
   # 14b. POI point markers — rendered as circles/shapes (icons not available in ggplot2)
