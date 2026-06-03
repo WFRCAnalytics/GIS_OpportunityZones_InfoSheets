@@ -43,24 +43,24 @@ the correct constant value across the full band.
 ## Phase 12 — Road Zoom Gates + Sym 5/6/7 Hairline Colours
 *Issues #7, #28*
 
-- ⬜ **12.1** `.ROAD_MIN_ZOOM`: `"6" = 11` → `"6" = 10`; `"7" = 12` → `"7" = 11`
-- ⬜ **12.2** Sym 6 casing colour at z10-11: use `#B0B0B0` not `.C_ROAD_CAS` — add zoom+sym conditional in casing loop
-- ⬜ **12.3** Sym 5 casing colour at z9-11: use `#BABABA` not `.C_ROAD_CAS` — add zoom+sym conditional in casing loop
+- ✅ **12.1** `.ROAD_MIN_ZOOM`: `"6" = 11` → `"6" = 10`; `"7" = 12` → `"7" = 11`
+- ✅ **12.2** Sym 6 casing colour at z10-11: use `#B0B0B0` not `.C_ROAD_CAS` — add zoom+sym conditional in casing loop
+- ✅ **12.3** Sym 5 casing colour at z9-11: use `#BABABA` not `.C_ROAD_CAS` — add zoom+sym conditional in casing loop
 
 ---
 
 ## Phase 13 — Hillshade 90m Opacity + Utah Overdraw
 *Issues #4, #31*
 
-- ⬜ **13.1** `.HS_ALPHA_TBL`: set `lt11 = 1.00` for all four symbols (was `0.70`); JSON 90m has no `fill-opacity`
-- ⬜ **13.2** Utah tint overdraw: draw tint from `ground$utah` single polygon not `counties` N-row frame
+- ✅ **13.1** `.HS_ALPHA_TBL`: set `lt11 = 1.00` for all four symbols (was `0.70`); JSON 90m has no `fill-opacity`
+- ✅ **13.2** Utah tint overdraw: draw tint from `ground$utah` single polygon not `counties` N-row frame
 
 ---
 
 ## Phase 14 — Streams Zoom Gate
 *Issue #6*
 
-- ⬜ **14.1** `.fetch_water()`: `streams = if (zoom >= 11)` → `if (zoom >= 6)`
+- ✅ **14.1** `.fetch_water()`: `streams = if (zoom >= 11)` → `if (zoom >= 6)`
   `.stream_lw()` for sym 0 already has stops starting at z6 — no draw-loop changes needed
 
 ---
@@ -68,16 +68,16 @@ the correct constant value across the full band.
 ## Phase 15 — Contour Linewidths
 *Issues #21, #22*
 
-- ⬜ **15.1** Sym 4 (500ft) linewidth: `.lw(1.0)` at all zooms → `.lw(0.667)` at z10-11, `.lw(1.0)` at z12+
-- ⬜ **15.2** Sym 5 (1000ft) linewidth: `.lw(1.333)` at all zooms → `.lw(0.667)` z9-10, `.lw(1.0)` z10-12, `.lw(1.333)` z12+
+- ✅ **15.1** Sym 4 (500ft) linewidth: `.lw(1.0)` at all zooms → `.lw(0.667)` at z10-11, `.lw(1.0)` at z12+
+- ✅ **15.2** Sym 5 (1000ft) linewidth: `.lw(1.333)` at all zooms → `.lw(0.667)` z9-10, `.lw(1.0)` z10-12, `.lw(1.333)` z12+
 
 ---
 
 ## Phase 16 — TRAX Linewidths + Sym 10
 *Issues #18, #19*
 
-- ⬜ **16.1** `.trax_lw()`: replace `approx()` with step-function — exact JSON bands z12-14 / z14-16 / z16+
-- ⬜ **16.2** Sym 10 draw width: change `linewidth = lw_cas` → `linewidth = lw_fil` (JSON 1.333px = fill width)
+- ✅ **16.1** `.trax_lw()`: replace `approx()` with step-function — exact JSON bands z12-14 / z14-16 / z16+
+- ✅ **16.2** Sym 10 draw width: change `linewidth = lw_cas` → `linewidth = lw_fil` (JSON 1.333px = fill width)
 
 ---
 
@@ -85,38 +85,38 @@ the correct constant value across the full band.
 *Issues #20, #10, #27*
 
 - 🚫 **17.1** Commuter rail dasharray `[4,2.4]` not representable in ggplot2 hex linetype — document the limitation
-- ⬜ **17.2** Add trail-specific colour constants: `.C_TRAIL_LBL_TXT = "#8C8989"`, `.C_TRAIL_LBL_HALO = rgba(230,228,225,0.60)`
-- ⬜ **17.3** Label section 15h: replace `.C_PARK_LBL` / `.C_PARK_HALO` with `.C_TRAIL_LBL_TXT` / `.C_TRAIL_LBL_HALO`
-- ⬜ **17.4** Trail fill linetype: `"11"` at all zooms → `"22"` at z14-15, `"11"` at z15+
+- ✅ **17.2** Add trail-specific colour constants: `.C_TRAIL_LBL_TXT = "#8C8989"`, `.C_TRAIL_LBL_HALO = rgba(230,228,225,0.60)`
+- ✅ **17.3** Label section 15h: replace `.C_PARK_LBL` / `.C_PARK_HALO` with `.C_TRAIL_LBL_TXT` / `.C_TRAIL_LBL_HALO`
+- ✅ **17.4** Trail fill linetype: `"11"` at all zooms → `"22"` at z14-15, `"11"` at z15+
 
 ---
 
 ## Phase 18 — Label Halo and Colour Constants
 *Issues #9, #11, #12, #13, #14, #15, #25*
 
-- ⬜ **18.1** Stream labels: add `.C_STM_HALO = rgb(230,226,218,140)` [rgba(230,226,218,0.55)]; use in section 15c
-- ⬜ **18.2** Lake labels: fix `.C_WATER_HALO` → `rgb(183,199,199,153)` [rgba(183,199,199,0.60)] — wrong base colour + alpha
-- ⬜ **18.3** Park halo constants: add `.C_PARK_HALO = rgb(194,204,173,77)` [0.30] (golf/cemetery) and `.C_PARK_HALO_LO = rgb(194,204,173,51)` [0.20] (parks); update sections 15e/15f/15g
-- ⬜ **18.4** Monument label colour: add `.C_MON_LBL_HI = "#8C8A89"` (z8-13); zoom-conditional in section 15d
-- ⬜ **18.5** Ski area halo: `.C_SKI_HALO` → `rgb(230,227,225,140)` [rgba(230,227,225,0.55)]
-- ⬜ **18.6** WesternStates labels: remove halo entirely — JSON has no `text-halo-color` for this layer
-- ⬜ **18.7** GSL halo: zoom-conditional — apply only at z<10; fix alpha 0.50 → 0.60
+- ✅ **18.1** Stream labels: add `.C_STM_HALO = rgb(230,226,218,140)` [rgba(230,226,218,0.55)]; use in section 15c
+- ✅ **18.2** Lake labels: fix `.C_WATER_HALO` → `rgb(183,199,199,153)` [rgba(183,199,199,0.60)] — wrong base colour + alpha
+- ✅ **18.3** Park halo constants: add `.C_PARK_HALO = rgb(194,204,173,77)` [0.30] (golf/cemetery) and `.C_PARK_HALO_LO = rgb(194,204,173,51)` [0.20] (parks); update sections 15e/15f/15g
+- ✅ **18.4** Monument label colour: add `.C_MON_LBL_HI = "#8C8A89"` (z8-13); zoom-conditional in section 15d
+- ✅ **18.5** Ski area halo: `.C_SKI_HALO` → `rgb(230,227,225,140)` [rgba(230,227,225,0.55)]
+- ✅ **18.6** WesternStates labels: remove halo entirely — JSON has no `text-halo-color` for this layer
+- ✅ **18.7** GSL halo: zoom-conditional — apply only at z<10; fix alpha 0.50 → 0.60
 
 ---
 
 ## Phase 19 — State Park Border + Municipality Carto:2
 *Issues #16, #17*
 
-- ⬜ **19.1** `.C_SP_BDR`: `"#8C867E"` → `"#999391"` (JSON z13+ State Park inner line-color)
-- ⬜ **19.2** Carto:2 sym 0 inner stroke z12-15: add `.C_M2_IN_SYM0_LO = rgb(160,134,179,51)` [rgba(160,134,179,0.20)]; zoom-conditional in draw loop
+- ✅ **19.1** `.C_SP_BDR`: `"#8C867E"` → `"#999391"` (JSON z13+ State Park inner line-color)
+- ✅ **19.2** Carto:2 sym 0 inner stroke z12-15: add `.C_M2_IN_SYM0_LO = rgb(160,134,179,51)` [rgba(160,134,179,0.20)]; zoom-conditional in draw loop
 
 ---
 
 ## Phase 20 — POI, WesternStates, Schools, Ski Lift, Buildings
 *Issues #23, #24, #26, #29, #30*
 
-- ⬜ **20.1** `gnis_bay` circle: move draw from step 14b to before county borders (after hillshade, step 2)
-- ⬜ **20.2** School circle sizes: `size = 1.5/1.2` → `.cr(1.83333)` for both; `stroke = 0.3/0.6` → `.lw(0.866667)` for both
-- ⬜ **20.3** WesternStates label fetch gate: `zoom >= 8` → `zoom >= 4`; add per-class zoom filter (class 0: z4-5, class 1: z6-8, class 2: z8+)
+- ✅ **20.1** `gnis_bay` circle: move draw from step 14b to before county borders (after hillshade, step 2)
+- ✅ **20.2** School circle sizes: `size = 1.5/1.2` → `.cr(1.83333)` for both; `stroke = 0.3/0.6` → `.lw(0.866667)` for both
+- ✅ **20.3** WesternStates label fetch gate: `zoom >= 8` → `zoom >= 4`; add per-class zoom filter (class 0: z4-5, class 1: z6-8, class 2: z8+)
 - 🚫 **20.4** Ski lift dasharray: `[18,3,1,3]` → ggplot2 hex max is F(15), encodes as [15,3,1,3] — document only
-- ⬜ **20.5** Buildings zoom gate: decision — change `zoom >= 14` → `zoom >= 12` for spec-exact, or document as intentional perf optimisation
+- ✅ **20.5** Buildings zoom gate: decision — change `zoom >= 14` → `zoom >= 12` for spec-exact, or document as intentional perf optimisation
