@@ -210,12 +210,6 @@ fmt_val <- function(x, digits = 1, suffix = "", big_mark = "") {
   paste0(format(rounded, scientific = FALSE), suffix)
 }
 
-tract_label <- function(geoid) {
-  sfx  <- substr(as.character(geoid), 6, 11)
-  base <- as.integer(substr(sfx, 1, 4))
-  dec  <- substr(sfx, 5, 6)
-  if (dec == "00") paste0("Tract ", base) else paste0("Tract ", base, ".", dec)
-}
 
 fmt_plus <- function(x, digits = 0, m = "") {
   if (is.na(x) || !is.finite(as.numeric(x))) return("—")
@@ -447,7 +441,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     '[#stack(dir: ttb, spacing: 6pt,',
     '[#text(fill: white, weight: "bold", size: 16pt)[', county_str, ' County]',
     '#h(6pt)#text(fill: rgb("', sky, '"), size: 8pt)[Opportunity Zone 2.0]],',
-    '[#text(fill: rgb("', sky, '"), size: 7pt)[Census Tract ', geoid_str, ' · ', tract_label(geoid_str), ' · ', acres_str, ' acres]]',
+    '[#text(fill: rgb("', sky, '"), size: 7pt)[Census Tract ', geoid_str, ' · ', as.character(g("TractName")), ' · ', acres_str, ' acres]]',
     ')]',
     ')]'
   )

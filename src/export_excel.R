@@ -21,7 +21,8 @@
 .XL_OZ_LESS   <- "#D98A3D"
 .XL_OZ_UNLKLY <- "#B4532E"
 .XL_OZ_UNK    <- "#9AA3A8"
-.XL_YELLOW_TINT <- "#FFFDE0"   # light yellow for key metric value cells
+.XL_YELLOW_TINT  <- "#FFFDE0"   # light yellow for key metric value cells
+.XL_ORANGE_TINT  <- "#FDE8D0"   # light orange for county rank headers and separators
 
 # ── Convert "#RRGGBB" hex string → wbColour (strips # prefix) ─────────────────
 .xl_col <- function(hex) {
@@ -70,14 +71,6 @@
   paste0(format(rounded, nsmall = digits, scientific = FALSE), suffix)
 }
 
-.xl_tract_label <- function(geoid) {
-  geoid <- as.character(geoid)
-  sfx  <- substr(geoid, 6, 11)
-  base <- as.integer(substr(sfx, 1, 4))
-  dec  <- substr(sfx, 5, 6)
-  if (is.na(dec) || nchar(trimws(dec)) == 0 || dec == "00") paste0("Tract ", base)
-  else paste0("Tract ", base, ".", dec)
-}
 
 # ── XLOOKUP helpers ───────────────────────────────────────────────────────────
 
@@ -146,16 +139,16 @@
 # returns the column for `metric`. Uses INDEX/MATCH (all Excel versions).
 # The &"" coerces the lookup value to text, preventing type-mismatch failures
 # when Excel silently converts 11-digit GEOIDs from text to numbers.
-# Numeric fields: blank All Data cells (NA in pipeline) show "Not Available/Applicable"
+# Numeric fields: blank All Data cells (NA in pipeline) show "n/a"
 # rather than 0, so non-MPO metrics (SAP, ATO) are honest about missing coverage.
-.xlup <- function(geoid_ref, metric, ad_sheet = "'All Data'") {
+.xlup <- function(geoid_ref, metric, ad_sheet = "'All Data - Detailed'") {
   if (!metric %in% names(.AD)) return('""')
   cl  <- .col_letter(.AD[[metric]])
   fmt <- .AD_FMT[[metric]]
   idx <- paste0('INDEX(', ad_sheet, '!$', cl, ':$', cl,
                 ',MATCH(', geoid_ref, '&"",', ad_sheet, '!$A:$A,0))')
   if (!is.na(fmt) && fmt != "@") {
-    paste0('=IFERROR(IF(', idx, '="","Not Available/Applicable",', idx, '),"-")')
+    paste0('=IFERROR(IF(', idx, '="","n/a",', idx, '),"-")')
   } else {
     paste0('=IFERROR(', idx, ',"-")')
   }
@@ -163,7 +156,7 @@
 
 # Raw INDEX/MATCH expression for embedding inside larger CONCAT formulas (no leading =).
 # Returns: IFERROR(INDEX(ad_sheet!$col:$col,MATCH(geoid_ref&"",ad_sheet!$A:$A,0)),fallback)
-.xlmatch <- function(geoid_ref, metric, fallback = '""', ad_sheet = "'All Data'") {
+.xlmatch <- function(geoid_ref, metric, fallback = '""', ad_sheet = "'All Data - Detailed'") {
   if (!metric %in% names(.AD)) return('""')
   cl <- .col_letter(.AD[[metric]])
   paste0('IFERROR(INDEX(', ad_sheet, '!$', cl, ':$', cl,
@@ -233,7 +226,7 @@
 # ── All Data sheet (flat database, one row per tract, 42 cols) ───────────────
 
 .write_alldata_sheet <- function(wb, report_data) {
-  wb <- openxlsx2::wb_add_worksheet(wb, sheet = "All Data",
+  wb <- openxlsx2::wb_add_worksheet(wb, sheet = "All Data - Detailed",
     tab_color = .xl_col(.XL_TEAL_SOFT))
 
   n_tracts <- nrow(report_data)
@@ -241,8 +234,7 @@
   ad <- data.frame(
     "GEOID"                  = as.character(report_data$GEOID),
     "County"                 = as.character(report_data$county),
-    "Tract"                  = vapply(as.character(report_data$GEOID),
-                                      .xl_tract_label, character(1L)),
+    "Tract Description"      = as.character(report_data$TractName),
     "Cities"                 = as.character(report_data$cities),
     "Population"             = report_data$pop,
     "Households"             = report_data$hh,
@@ -292,11 +284,11 @@
   n_cols <- 44L
 
   # Row 1: title
-  wb <- .mff(wb, "All Data", 1L, 1:n_cols,
+  wb <- .mff(wb, "All Data - Detailed", 1L, 1:n_cols,
     value = paste0("OZ 2.0 Candidate Tracts — All Data  |  ",
                    format(Sys.Date(), "%B %d, %Y")),
     fill = .XL_TEAL, font_size = 13, bold = TRUE)
-  wb <- openxlsx2::wb_set_row_heights(wb, "All Data", rows = 1L, heights = 26)
+  wb <- openxlsx2::wb_set_row_heights(wb, "All Data - Detailed", rows = 1L, heights = 26)
 
   # Row 2: column headers — styled manually.
   # wb_add_data_table is intentionally avoided: applying wb_add_formula /
@@ -304,19 +296,19 @@
   # XML that Excel flags as a repair error on open.
   col_labels <- names(ad)
   for (j in seq_len(n_cols)) {
-    wb <- .wc(wb, "All Data", 2L, j, col_labels[j])
-    wb <- openxlsx2::wb_add_fill(wb, "All Data",
+    wb <- .wc(wb, "All Data - Detailed", 2L, j, col_labels[j])
+    wb <- openxlsx2::wb_add_fill(wb, "All Data - Detailed",
       dims = .d1(2L, j), color = .xl_col(.XL_TEAL))
-    wb <- openxlsx2::wb_add_font(wb, "All Data", dims = .d1(2L, j),
+    wb <- openxlsx2::wb_add_font(wb, "All Data - Detailed", dims = .d1(2L, j),
       name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_WHITE))
-    wb <- openxlsx2::wb_add_cell_style(wb, "All Data", dims = .d1(2L, j),
+    wb <- openxlsx2::wb_add_cell_style(wb, "All Data - Detailed", dims = .d1(2L, j),
       horizontal = "center", vertical = "center", wrap_text = TRUE)
   }
-  wb <- openxlsx2::wb_set_row_heights(wb, "All Data", rows = 2L, heights = 20)
-  wb <- openxlsx2::wb_add_filter(wb, "All Data", rows = 2L, cols = 1:n_cols)
+  wb <- openxlsx2::wb_set_row_heights(wb, "All Data - Detailed", rows = 2L, heights = 20)
+  wb <- openxlsx2::wb_add_filter(wb, "All Data - Detailed", rows = 2L, cols = 1:n_cols)
 
   # Data rows (3 to n_tracts+2)
-  wb <- openxlsx2::wb_add_data(wb, "All Data", x = ad,
+  wb <- openxlsx2::wb_add_data(wb, "All Data - Detailed", x = ad,
     dims = "A3", col_names = FALSE)
 
   # openxlsx2 writes NA_real_ as Excel's #N/A error, not an empty cell.
@@ -328,21 +320,21 @@
                     "ato_jobtransit", "ato_hhtransit")) {
     .na_rows <- which(is.na(report_data[[.na_col]])) + 2L
     for (.na_r in .na_rows) {
-      wb <- openxlsx2::wb_add_data(wb, "All Data", x = "",
+      wb <- openxlsx2::wb_add_data(wb, "All Data - Detailed", x = "",
                                    dims = .d1(.na_r, .AD[[.na_col]]), col_names = FALSE)
     }
   }
   rm(.na_col, .na_rows)
 
-  wb <- openxlsx2::wb_set_col_widths(wb, "All Data", cols = 1:n_cols,
-    widths = c(14, 12, 12, 28, rep(10, 29), 14, rep(10, 10)))
+  wb <- openxlsx2::wb_set_col_widths(wb, "All Data - Detailed", cols = 1:n_cols,
+    widths = c(14, 12, 38, 28, rep(10, 29), 14, rep(10, 10)))
 
   # Number formats on data cells (apply @ to text cols so Excel keeps them as text)
   data_rows <- 3L:(n_tracts + 2L)
   for (metric in names(.AD)) {
     fmt <- .AD_FMT[[metric]]
     if (!is.na(fmt)) {
-      wb <- openxlsx2::wb_add_numfmt(wb, "All Data",
+      wb <- openxlsx2::wb_add_numfmt(wb, "All Data - Detailed",
         dims = .dr(data_rows, .AD[[metric]]), numfmt = fmt)
     }
   }
@@ -355,37 +347,37 @@
     r <- row_i + 2L
 
     # Residential acres total  =  SFD acres + MF/SFA acres
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["res_acres_total"]]),
       x = paste0("=", .cl("res_acres_sfd"), r, "+", .cl("res_acres_mf_sfa"), r))
 
     # OZ 1.0 %  =  OZ 1.0 Acres / Total Acres × 100
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["oz1_pct"]]),
       x = paste0("=IFERROR(", .cl("oz1_acres"), r,
                  "/", .cl("total_acres"), r, "*100,0)"))
 
     # WC MUorC %  =  Metropolitan + Urban + City center percentages
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["wc_muc_pct"]]),
       x = paste0("=", .cl("wc_pct_metropolitan_center"), r,
                  "+", .cl("wc_pct_urban_center"), r,
                  "+", .cl("wc_pct_city_center"), r))
 
     # SAP %  =  SAP Acres / Total Acres × 100 (blank when SAP acres unavailable)
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["sap_pct"]]),
       x = paste0('=IF(', .cl("sap_acres"), r, '="","",',
                  'IFERROR(', .cl("sap_acres"), r,
                  '/', .cl("total_acres"), r, '*100,0))'))
 
     # ERU Added  =  HH Added + Jobs Added × 0.4
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["eru_added"]]),
       x = paste0("=", .cl("hh_added"), r, "+", .cl("jobs_added"), r, "*0.4"))
 
     # ERU/ac  =  ERU Added / Dev Acres
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["eru_per_acre"]]),
       x = paste0("=IFERROR(", .cl("eru_added"), r,
                  "/", .cl("dev_acres"), r, ",0)"))
@@ -397,7 +389,7 @@
       rng <- paste0("$", cl, "$3:$", cl, "$", end_row)
       paste0("(", cl, r, "-MIN(", rng, "))/(MAX(", rng, ")-MIN(", rng, "))*100")
     }
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["ato_composite"]]),
       x = paste0(
         '=IFERROR(IF(', .cl("ato_jobauto"), r, '="","",(',
@@ -412,7 +404,7 @@
     # AVERAGEIF ignores blank cells, so non-MPO tracts are excluded from county avg.
     ato_cl <- .cl("ato_composite")
     cty_cl <- .cl("county")
-    wb <- openxlsx2::wb_add_formula(wb, "All Data",
+    wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["ato_pct_county_avg"]]),
       x = paste0(
         '=IFERROR(IF(', ato_cl, r, '="","",',
@@ -421,18 +413,9 @@
         ',$', ato_cl, ':$', ato_cl, ')*100),"")'
       ))
 
-    # oz_short (col AP): static fill + white font keyed to classification
-    oz_cls_i <- if (is.na(report_data$oztoolclassification[row_i])) NA_character_
-                else as.character(report_data$oztoolclassification[row_i])
-    wb <- openxlsx2::wb_add_fill(wb, "All Data",
-      dims = .d1(r, .AD[["oz_short"]]),
-      color = .xl_col(.xl_oz_color(oz_cls_i)))
-    wb <- openxlsx2::wb_add_font(wb, "All Data",
-      dims = .d1(r, .AD[["oz_short"]]),
-      name = "Poppins", size = 9, bold = TRUE, color = .xl_col(.XL_WHITE))
   }
 
-  wb <- openxlsx2::wb_freeze_pane(wb, "All Data",
+  wb <- openxlsx2::wb_freeze_pane(wb, "All Data - Detailed",
     first_active_row = 3L, first_active_col = 2L)
 
   wb
@@ -448,7 +431,7 @@
 
   # Row 1: Title
   wb <- .mff(wb, "README", 1, 1:4,
-    value = "OZ 2.0 Candidate Tracts — Excel Export",
+    value = "OZ 2.0 Candidate Tracts — WFRC Analysis",
     fill = .XL_TEAL, font_size = 16, bold = TRUE)
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 1, heights = 30)
 
@@ -501,16 +484,18 @@
   for (j in 1:2) {
     lbl <- c("Sheet Name", "Description")[j]
     wb <- .wc(wb, "README", 12, j, lbl)
-    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .d1(12, j), color = .xl_col(.XL_TEAL))
+    fill_dims <- if (j == 2) .dr(12, 2:4) else .d1(12, j)
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = fill_dims, color = .xl_col(.XL_TEAL))
     wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(12, j),
       name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_WHITE))
     wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(12, j),
       horizontal = "left", vertical = "center")
+    if (j == 2) wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(12, 2:4))
   }
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 12, heights = 16)
 
   # Rows 13+: sheet guide (All Data last)
-  sheet_guide <- c("README", "Summary", paste0(county_names, " County"), "All Data")
+  sheet_guide <- c("README", "Summary - 4 Key Measures", paste0(county_names, " County - Detailed"), "All Data - Detailed")
   sheet_desc  <- c(
     "This sheet: about this workbook, abbreviation glossary, and data sources.",
     "Regional overview: one row per tract with key profile and access metrics for all eligible tracts across the Wasatch Front.",
@@ -522,7 +507,8 @@
     fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
     wb <- .wc(wb, "README", row_r, 1, sheet_guide[k])
     wb <- .wc(wb, "README", row_r, 2, sheet_desc[k])
-    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(row_r, 1:2), color = .xl_col(fill_c))
+    wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(row_r, 2:4))
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(row_r, 1:4), color = .xl_col(fill_c))
     wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
       name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_TEAL))
     wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 2),
@@ -565,11 +551,13 @@
   for (j in 1:3) {
     lbl <- c("Term", "Full Name", "Description")[j]
     wb <- .wc(wb, "README", hdr_row, j, lbl)
-    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .d1(hdr_row, j), color = .xl_col(.XL_TEAL))
+    fill_dims <- if (j == 3) .dr(hdr_row, 3:4) else .d1(hdr_row, j)
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = fill_dims, color = .xl_col(.XL_TEAL))
     wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(hdr_row, j),
       name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_WHITE))
     wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(hdr_row, j),
       horizontal = "left", vertical = "center")
+    if (j == 3) wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(hdr_row, 3:4))
   }
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = hdr_row, heights = 16)
 
@@ -578,50 +566,20 @@
     fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
     for (j in 1:3) {
       wb <- .wc(wb, "README", row_r, j, abbrevs[[k]][j])
-      wb <- openxlsx2::wb_add_fill(wb, "README", dims = .d1(row_r, j), color = .xl_col(fill_c))
+      fill_dims <- if (j == 3) .dr(row_r, 3:4) else .d1(row_r, j)
+      wb <- openxlsx2::wb_add_fill(wb, "README", dims = fill_dims, color = .xl_col(fill_c))
       wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, j),
         name = "Poppins", size = 8, bold = (j == 1),
         color = .xl_col(if (j == 1) .XL_TEAL else .XL_BODY))
       wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, j),
         horizontal = "left", vertical = "top", wrap_text = TRUE)
+      if (j == 3) wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(row_r, 3:4))
     }
     wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 28)
   }
 
-  # Data sources
-  src_row <- hdr_row + length(abbrevs) + 2
-  wb <- .mff(wb, "README", src_row, 1:4,
-    value = "DATA SOURCES",
-    fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
-  wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = src_row, heights = 16)
-
-  sources <- c(
-    "Federal OZ 2.0 Eligibility List — U.S. Treasury / HUD",
-    "Urban Institute OZ Tool Classification — Urban Institute",
-    "Wasatch Choice for 2050 Centers & Districts — WFRC/MAG",
-    "ACS Population, Households, Income, Poverty, Unemployment — U.S. Census Bureau",
-    "UTA Rail/BRT Stops — Utah Transit Authority",
-    "Station Area Plans (SAP) — WFRC/MAG",
-    "Freeway Interchanges — WFRC/MAG",
-    "Housing Inventory — WFRC/MAG",
-    "Access to Opportunities (ATO) Scores — WFRC/MAG",
-    "TAZ Growth Projections 2027-2037 — WFRC/MAG"
-  )
-  for (k in seq_along(sources)) {
-    row_r  <- src_row + k
-    fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
-    wb <- .wc(wb, "README", row_r, 1, sources[k])
-    wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(row_r, 1:4))
-    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(row_r, 1:4), color = .xl_col(fill_c))
-    wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
-      name = "Poppins", size = 8, color = .xl_col(.XL_BODY))
-    wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, 1),
-      horizontal = "left", vertical = "center")
-    wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 15)
-  }
-
   # ── Methodology notes ─────────────────────────────────────────────────────
-  meth_start <- src_row + length(sources) + 2
+  meth_start <- hdr_row + length(abbrevs) + 2
   wb <- .mff(wb, "README", meth_start, 1:4,
     value = "METHODOLOGY NOTES",
     fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
@@ -688,7 +646,7 @@
         "Station Area Plan (SAP) and Access to Opportunities (ATO) metrics are derived from ",
         "WFRC/MAG datasets that cover only the MPO planning boundary. Tooele County tracts ",
         "fall outside this boundary and therefore have no SAP or ATO data. These cells show ",
-        "'Not Available/Applicable' in the per-county detail sheets and are left blank in ",
+        "'n/a' in the per-county detail sheets and are left blank in ",
         "the All Data sheet."
       )
     )
@@ -712,24 +670,67 @@
     wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 52)
   }
 
+  # Data sources
+  src_row <- meth_hdr + length(meth_entries) + 2
+  wb <- .mff(wb, "README", src_row, 1:4,
+    value = "DATA SOURCES",
+    fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
+  wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = src_row, heights = 16)
+
+  sources <- c(
+    "Federal OZ 2.0 Eligibility List — U.S. Treasury / HUD",
+    "Urban Institute OZ Tool Classification — Urban Institute (Methodology Explanation)",
+    "Wasatch Choice for 2050 Centers & Districts — WFRC/MAG",
+    "ACS Population, Households, Income, Poverty, Unemployment — U.S. Census Bureau",
+    "UTA Rail/BRT Stops — Utah Transit Authority",
+    "Station Area Plans (SAP) — WFRC/MAG",
+    "Freeway Interchanges — WFRC/MAG",
+    "Housing Inventory — WFRC/MAG",
+    "Access to Opportunities (ATO) Scores — WFRC/MAG",
+    "TAZ Growth Projections 2027-2037 — WFRC/MAG"
+  )
+  for (k in seq_along(sources)) {
+    row_r  <- src_row + k
+    fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
+    if (k == 2L) {
+      # Urban Institute row — full cell hyperlinks to UI project page
+      wb <- openxlsx2::wb_add_formula(wb, "README", dims = .d1(row_r, 1),
+        x = paste0('=HYPERLINK("https://www.urban.org/projects/informing-2026-opportunity-zone-selections-state-and-local-decisionmakers/opportunity",',
+                   '"', sources[k], '")'))
+      wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
+        name = "Poppins", size = 8, color = .xl_col(.XL_OZ_MORE), underline = "single")
+    } else {
+      wb <- .wc(wb, "README", row_r, 1, sources[k])
+      wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
+        name = "Poppins", size = 8, color = .xl_col(.XL_BODY))
+    }
+    wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(row_r, 1:4))
+    wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(row_r, 1:4), color = .xl_col(fill_c))
+    wb <- openxlsx2::wb_add_cell_style(wb, "README", dims = .d1(row_r, 1),
+      horizontal = "left", vertical = "center")
+    wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = row_r, heights = 15)
+  }
+
   wb
 }
 
 # ── Summary sheet ─────────────────────────────────────────────────────────────
 
 .write_summary_sheet <- function(wb, report_data) {
-  wb <- openxlsx2::wb_add_worksheet(wb, sheet = "Summary",
+  wb <- openxlsx2::wb_add_worksheet(wb, sheet = "Summary - 4 Key Measures",
     tab_color = .xl_col(.XL_TEAL))
-  # Cols: #, County, Tract, GEOID, Pop, HH, TotalAc, DevAc, OZ1%, MUorC%, ATO, SAP, ERU, Likelihood
-  wb <- openxlsx2::wb_set_col_widths(wb, "Summary", cols = 1:14,
-    widths = c(4, 12, 14, 13, 9, 9, 9, 9, 8, 8, 7, 7, 7, 22))
+  # Cols: #, GEOID, County, Tract Description, Pop, HH, TotalAc, DevAc, OZ1%, MUorC%, ATO, SAP, ERU, [4 ranks], UI Likelihood
+  wb <- openxlsx2::wb_set_col_widths(wb, "Summary - 4 Key Measures", cols = 1:18,
+    widths = c(4, 13, 12, 38, 9, 9, 9, 9, 8, 8, 7, 7, 7, 6, 6, 6, 6, 22))
+  wb <- openxlsx2::wb_set_col_widths(wb, "Summary - 4 Key Measures", cols = 5:9,  hidden = TRUE)
+  wb <- openxlsx2::wb_set_col_widths(wb, "Summary - 4 Key Measures", cols = 18L, hidden = TRUE)
 
   # Row 1: document title
-  wb <- .mff(wb, "Summary", 1, 1:14,
+  wb <- .mff(wb, "Summary - 4 Key Measures", 1, 1:18,
     value = paste0("OZ 2.0 Eligible Census Tracts — Wasatch Front Region  |  ",
                    format(Sys.Date(), "%B %d, %Y")),
     fill = .XL_TEAL, font_size = 14, bold = TRUE)
-  wb <- openxlsx2::wb_set_row_heights(wb, "Summary", rows = 1, heights = 28)
+  wb <- openxlsx2::wb_set_row_heights(wb, "Summary - 4 Key Measures", rows = 1, heights = 28)
 
   # Row 2: super-group headers
   super <- list(
@@ -737,41 +738,44 @@
     list(label = "IDENTITY",          cols = 2:4,   fill = .XL_TEAL,     fc = .XL_WHITE),
     list(label = "PROFILE",           cols = 5:9,   fill = .XL_TEAL,     fc = .XL_WHITE),
     list(label = "FOUR KEY MEASURES", cols = 10:13, fill = .XL_KEY_TINT, fc = .XL_AMBER),
-    list(label = "INVESTMENT",        cols = 14,    fill = .XL_TEAL,     fc = .XL_WHITE)
+    list(label = "WITHIN COUNTY RANKING", cols = 14:17, fill = .XL_ORANGE_TINT, fc = .XL_AMBER),
+    list(label = "URBAN INSTITUTE",   cols = 18,    fill = .XL_TEAL,     fc = .XL_WHITE)
   )
   for (sg in super) {
-    wb <- .mff(wb, "Summary", 2, sg$cols,
+    wb <- .mff(wb, "Summary - 4 Key Measures", 2, sg$cols,
       value = sg$label,
       fill = sg$fill, font_size = 7, bold = TRUE,
       font_color = sg$fc, h_align = "center", v_align = "bottom")
   }
-  wb <- openxlsx2::wb_set_row_heights(wb, "Summary", rows = 2, heights = 14)
+  wb <- openxlsx2::wb_set_row_heights(wb, "Summary - 4 Key Measures", rows = 2, heights = 14)
 
   # Row 3: column headers
   col_hdrs <- c(
-    "#", "County", "Tract", "GEOID",
+    "#", "GEOID", "County", "Tract Description",
     "Population", "Households", "Total Acres", "Dev Acres", "OZ 1.0 %",
     "WC MUorC %", "ATO /100", "SAP HH/ac", "ERU/ac",
+    "MUorC Rank", "ATO Rank", "SAP Rank", "ERU Rank",
     "Investment Likelihood"
   )
   for (j in seq_along(col_hdrs)) {
-    is_key <- j %in% 10:13
-    bg     <- if (is_key) .XL_KEY_TINT else .XL_TEAL
-    fg     <- if (is_key) .XL_INK      else .XL_WHITE
-    wb <- .wc(wb, "Summary", 3, j, col_hdrs[j])
-    wb <- openxlsx2::wb_add_fill(wb, "Summary", dims = .d1(3, j), color = .xl_col(bg))
-    wb <- openxlsx2::wb_add_font(wb, "Summary", dims = .d1(3, j),
+    is_key  <- j %in% 10:13
+    is_rank <- j %in% 14:17
+    bg <- if (is_rank) .XL_ORANGE_TINT else if (is_key) .XL_KEY_TINT else .XL_TEAL
+    fg <- if (is_rank) .XL_AMBER       else if (is_key) .XL_INK      else .XL_WHITE
+    wb <- .wc(wb, "Summary - 4 Key Measures", 3, j, col_hdrs[j])
+    wb <- openxlsx2::wb_add_fill(wb, "Summary - 4 Key Measures", dims = .d1(3, j), color = .xl_col(bg))
+    wb <- openxlsx2::wb_add_font(wb, "Summary - 4 Key Measures", dims = .d1(3, j),
       name = "Poppins", size = 8, bold = TRUE, color = .xl_col(fg))
-    wb <- openxlsx2::wb_add_cell_style(wb, "Summary", dims = .d1(3, j),
+    wb <- openxlsx2::wb_add_cell_style(wb, "Summary - 4 Key Measures", dims = .d1(3, j),
       horizontal = "center", vertical = "bottom", wrap_text = TRUE)
   }
-  wb <- openxlsx2::wb_set_row_heights(wb, "Summary", rows = 3, heights = 30)
+  wb <- openxlsx2::wb_set_row_heights(wb, "Summary - 4 Key Measures", rows = 3, heights = 30)
 
   # Freeze rows 1-3
-  wb <- openxlsx2::wb_freeze_pane(wb, "Summary",
+  wb <- openxlsx2::wb_freeze_pane(wb, "Summary - 4 Key Measures",
     first_active_row = 4, first_active_col = 3)
 
-  # Data rows — values pulled via XLOOKUP from All Data (GEOID anchor in col D)
+  # Data rows — GEOID anchor in col B; County & Tract Description via XLOOKUP from All Data
   current_row  <- 4L
   county_names <- levels(droplevels(report_data$county))
 
@@ -780,31 +784,34 @@
       dplyr::arrange(GEOID)
 
     # County separator row
-    wb <- .mff(wb, "Summary", current_row, 1:14,
+    wb <- .mff(wb, "Summary - 4 Key Measures", current_row, 1:18,
       value = paste0(county_name, " County  —  ", nrow(cty_data), " Eligible Tracts"),
       fill = .XL_TEAL_MID, font_size = 9, bold = TRUE)
-    wb <- openxlsx2::wb_set_row_heights(wb, "Summary", rows = current_row, heights = 18)
+    wb <- openxlsx2::wb_set_row_heights(wb, "Summary - 4 Key Measures", rows = current_row, heights = 18)
     current_row <- current_row + 1L
     data_start  <- current_row
+    data_end    <- current_row + nrow(cty_data) - 1L
 
     for (i in seq_len(nrow(cty_data))) {
       tract     <- cty_data[i, ]
       row_r     <- current_row
       g         <- function(col) .xl_cv(tract, col)
       geoid     <- as.character(g("GEOID"))
-      geoid_ref <- paste0("$D", row_r)   # GEOID lives in col D
+      geoid_ref <- paste0("$B", row_r)   # GEOID lives in col B
 
       row_fill <- if (i %% 2 == 0) .XL_WHITE else .XL_HAIR
       key_fill <- if (i %% 2 == 0) .XL_WHITE else .XL_KEY_TINT
 
-      # Cols 1-4: static identity
-      wb <- .wc(wb, "Summary", row_r, 1L, sprintf("%02d", i))
-      wb <- .wc(wb, "Summary", row_r, 2L, as.character(g("county")))
-      wb <- .wc(wb, "Summary", row_r, 3L, .xl_tract_label(geoid))
-      wb <- .wc(wb, "Summary", row_r, 4L, geoid)
+      # Col 1: index; Col 2: GEOID (anchor); Cols 3-4: XLOOKUP from All Data
+      wb <- .wc(wb, "Summary - 4 Key Measures", row_r, 1L, sprintf("%02d", i))
+      wb <- .wc(wb, "Summary - 4 Key Measures", row_r, 2L, geoid)
       # Force text storage — GEOIDs look numeric and Excel auto-converts them
-      wb <- openxlsx2::wb_add_numfmt(wb, "Summary",
-        dims = .d1(row_r, 4L), numfmt = "@")
+      wb <- openxlsx2::wb_add_numfmt(wb, "Summary - 4 Key Measures",
+        dims = .d1(row_r, 2L), numfmt = "@")
+      wb <- openxlsx2::wb_add_formula(wb, "Summary - 4 Key Measures",
+        dims = .d1(row_r, 3L), x = .xlup(geoid_ref, "county"))
+      wb <- openxlsx2::wb_add_formula(wb, "Summary - 4 Key Measures",
+        dims = .d1(row_r, 4L), x = .xlup(geoid_ref, "tract_label"))
 
       # Cols 5-13: XLOOKUP numeric formulas
       num_cols <- list(
@@ -819,40 +826,55 @@
         list(j = 13L, m = "eru_per_acre",             f = "0.00")
       )
       for (nc in num_cols) {
-        wb <- openxlsx2::wb_add_formula(wb, "Summary",
+        wb <- openxlsx2::wb_add_formula(wb, "Summary - 4 Key Measures",
           dims = .d1(row_r, nc$j), x = .xlup(geoid_ref, nc$m))
-        wb <- openxlsx2::wb_add_numfmt(wb, "Summary",
+        wb <- openxlsx2::wb_add_numfmt(wb, "Summary - 4 Key Measures",
           dims = .d1(row_r, nc$j), numfmt = nc$f)
       }
 
-      # Col 14: INDEX/MATCH formula for text; static fill from R data (no CF)
-      oz_cls <- if (is.na(g("oztoolclassification"))) NA_character_
-                else as.character(g("oztoolclassification"))
-      wb <- openxlsx2::wb_add_formula(wb, "Summary",
-        dims = .d1(row_r, 14L), x = .xlup(geoid_ref, "oz_short"))
+      # Cols 14-17: within-county RANK.EQ formulas (rank 1 = highest value)
+      rank_cols <- list(
+        list(j = 14L, src = 10L),  # MUorC rank
+        list(j = 15L, src = 11L),  # ATO rank
+        list(j = 16L, src = 12L),  # SAP rank
+        list(j = 17L, src = 13L)   # ERU rank
+      )
+      for (rc in rank_cols) {
+        cl <- .col_letter(rc$src)
+        wb <- openxlsx2::wb_add_formula(wb, "Summary - 4 Key Measures",
+          dims = .d1(row_r, rc$j), cm = TRUE,
+          x = paste0('=IFERROR(IF(ISNUMBER(', cl, row_r, '),RANK.EQ(', cl, row_r,
+                     ',$', cl, '$', data_start, ':$', cl, '$', data_end, ',0),"-"),"-")'))
+        wb <- openxlsx2::wb_add_numfmt(wb, "Summary - 4 Key Measures",
+          dims = .d1(row_r, rc$j), numfmt = "0")
+      }
+
+      # Col 18: XLOOKUP formula for UI investment likelihood text
+      wb <- openxlsx2::wb_add_formula(wb, "Summary - 4 Key Measures",
+        dims = .d1(row_r, 18L), x = .xlup(geoid_ref, "oz_short"))
 
       # Fill
-      wb <- openxlsx2::wb_add_fill(wb, "Summary",
+      wb <- openxlsx2::wb_add_fill(wb, "Summary - 4 Key Measures",
         dims = .dr(row_r, 1:9),  color = .xl_col(row_fill))
-      wb <- openxlsx2::wb_add_fill(wb, "Summary",
-        dims = .dr(row_r, 10:13), color = .xl_col(key_fill))
-      wb <- openxlsx2::wb_add_fill(wb, "Summary",
-        dims = .d1(row_r, 14L), color = .xl_col(.xl_oz_color(oz_cls)))
+      wb <- openxlsx2::wb_add_fill(wb, "Summary - 4 Key Measures",
+        dims = .dr(row_r, 10:17), color = .xl_col(key_fill))
+      wb <- openxlsx2::wb_add_fill(wb, "Summary - 4 Key Measures",
+        dims = .d1(row_r, 18L), color = .xl_col(row_fill))
 
       # Font
-      wb <- openxlsx2::wb_add_font(wb, "Summary", dims = .dr(row_r, 1:13),
+      wb <- openxlsx2::wb_add_font(wb, "Summary - 4 Key Measures", dims = .dr(row_r, 1:17),
         name = "Poppins", size = 9, color = .xl_col(.XL_INK))
-      wb <- openxlsx2::wb_add_font(wb, "Summary", dims = .d1(row_r, 14L),
-        name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_WHITE))
+      wb <- openxlsx2::wb_add_font(wb, "Summary - 4 Key Measures", dims = .d1(row_r, 18L),
+        name = "Poppins", size = 8, bold = TRUE, color = .xl_col(.XL_INK))
 
       # Alignment
-      wb <- openxlsx2::wb_add_cell_style(wb, "Summary", dims = .dr(row_r, 1:4),
+      wb <- openxlsx2::wb_add_cell_style(wb, "Summary - 4 Key Measures", dims = .dr(row_r, 1:4),
         horizontal = "left", vertical = "center")
-      wb <- openxlsx2::wb_add_cell_style(wb, "Summary", dims = .dr(row_r, 5:13),
+      wb <- openxlsx2::wb_add_cell_style(wb, "Summary - 4 Key Measures", dims = .dr(row_r, 5:17),
         horizontal = "right", vertical = "center")
-      wb <- openxlsx2::wb_add_cell_style(wb, "Summary", dims = .d1(row_r, 14L),
+      wb <- openxlsx2::wb_add_cell_style(wb, "Summary - 4 Key Measures", dims = .d1(row_r, 18L),
         horizontal = "center", vertical = "center")
-      wb <- openxlsx2::wb_set_row_heights(wb, "Summary", rows = row_r, heights = 16)
+      wb <- openxlsx2::wb_set_row_heights(wb, "Summary - 4 Key Measures", rows = row_r, heights = 16)
 
       current_row <- current_row + 1L
     }
@@ -861,7 +883,7 @@
     for (col_j in 10:13) {
       tryCatch(
         openxlsx2::wb_add_conditional_formatting(
-          wb, "Summary",
+          wb, "Summary - 4 Key Measures",
           dims = .dr(data_start:(current_row - 1L), col_j),
           type = "dataBar"
         ),
@@ -1133,7 +1155,7 @@
 # ── Per-county detail sheet ───────────────────────────────────────────────────
 
 .write_county_sheet <- function(wb, county_data, county_name, map_paths) {
-  sheet_name <- paste0(county_name, " County")
+  sheet_name <- paste0(county_name, " County - Detailed")
   wb <- openxlsx2::wb_add_worksheet(wb, sheet = sheet_name,
     tab_color = .xl_col(.XL_TEAL))
   # A=map(28) | B-C=Tract Profile(22+22) | D=buf(3) | E-F=Centers(22+12) |
@@ -1173,7 +1195,7 @@
 #' @param tract_maps   Named list of ggplot objects keyed by GEOID.
 #' @param settings     Named list from config/settings.yml.
 #' @param map_cache_dir  Path to map PNG cache directory (data/map_cache).
-#' @param output_path    Overrides default output/OZ_Tracts_Export.xlsx.
+#' @param output_path    Overrides default output/Opportunity Zones 2.0 - WF Candidate Tract Analysis.xlsx.
 export_excel <- function(report_data, tract_maps, settings,
                          map_cache_dir = "data/map_cache",
                          output_path = NULL) {
@@ -1181,7 +1203,7 @@ export_excel <- function(report_data, tract_maps, settings,
     stop("openxlsx2 is required. Run: install.packages('openxlsx2')", call. = FALSE)
   }
   if (is.null(output_path)) {
-    output_path <- file.path(settings$output_dir, "OZ_Tracts_Export.xlsx")
+    output_path <- file.path(settings$output_dir, "Opportunity Zones 2.0 - WF Candidate Tract Analysis.xlsx")
   }
   dir.create(dirname(output_path), showWarnings = FALSE, recursive = TRUE)
 
@@ -1195,6 +1217,7 @@ export_excel <- function(report_data, tract_maps, settings,
     creator = "WFRC / MAG",
     title   = "OZ 2.0 Candidate Tracts — Wasatch Front Region"
   )
+  wb$workbook$calcPr <- '<calcPr fullCalcOnLoad="1"/>'
   wb <- openxlsx2::wb_set_base_font(wb,
     font_name  = "Poppins",
     font_size  = 9,

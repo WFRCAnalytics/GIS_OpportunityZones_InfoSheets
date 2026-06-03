@@ -125,13 +125,6 @@ cell_bar <- function(num_str, bar_pct_val, bar_color) {
   )
 }
 
-# Short tract label from GEOID last 6 digits
-tract_label <- function(geoid) {
-  sfx <- substr(as.character(geoid), 6, 11)
-  base <- as.integer(substr(sfx, 1, 4))
-  dec <- substr(sfx, 5, 6)
-  if (dec == "00") paste0("Tract ", base) else paste0("Tract ", base, ".", dec)
-}
 
 # ── Column maxima for relative bar scaling ────────────────────────────────────
 safe_max <- function(x) {
@@ -415,7 +408,7 @@ for (i in seq_len(nrow(county_data))) {
   sfx <- substr(geoid, 6, 11)
   cat(paste0(
     '  [#text(weight: "semibold", size: 8pt)[',
-    tract_label(geoid),
+    as.character(tract$TractName),
     ']',
     '#linebreak()#text(fill: rgb("',
     muted_c,

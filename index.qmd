@@ -325,7 +325,7 @@ tract_info <- oz_tracts |>
 #| label: places-info
 # Intersect tracts with TIGER places; list cities ordered by overlap area desc.
 # Only include cities covering at least this share of the tract to exclude slivers.
-.places_min_pct <- 0.02   # 2 % of tract area
+.places_min_pct <- 0.02 # 2 % of tract area
 
 tract_areas <- oz_tracts |>
   dplyr::mutate(tract_area = as.numeric(sf::st_area(geom))) |>
@@ -594,8 +594,8 @@ sap_crosswalk <- readr::read_csv(
   comment = "#",
   col_types = readr::cols_only(
     station_gpkg = readr::col_character(),
-    line_gpkg    = readr::col_character(),
-    xlsx_group   = readr::col_character()
+    line_gpkg = readr::col_character(),
+    xlsx_group = readr::col_character()
   )
 ) |>
   dplyr::mutate(xlsx_group = stringr::str_squish(xlsx_group))
@@ -608,7 +608,7 @@ sap_housing_xlsx <- openxlsx2::read_xlsx(
   dplyr::select(xlsx_group = 1, housing_units = 3) |>
   dplyr::filter(!is.na(xlsx_group), !grepl("^Total", xlsx_group)) |>
   dplyr::mutate(
-    xlsx_group    = stringr::str_squish(xlsx_group),
+    xlsx_group = stringr::str_squish(xlsx_group),
     housing_units = suppressWarnings(as.double(housing_units)),
     housing_units = dplyr::if_else(is.na(housing_units), 0, housing_units)
   )
@@ -664,7 +664,7 @@ sap_housing_overlap <- suppressWarnings(
 
 transit_info <- transit_info |>
   dplyr::left_join(sap_housing_overlap, by = "GEOID")
-  # sap_planned_hh_per_acre: NA kept for non-MPO tracts (no SAP coverage)
+# sap_planned_hh_per_acre: NA kept for non-MPO tracts (no SAP coverage)
 ```
 
 ## Auto
@@ -915,22 +915,38 @@ dir.create(.bm_dir, showWarnings = FALSE, recursive = TRUE)
 
 # Check whether all OZ tracts already have a cached basemap TIF.
 # Zoom is baked into the filename (bm_<GEOID>_z<zoom>.tif); any zoom hit counts.
-.bm_cached <- unique(sub("^bm_(.+)_z[0-9]+\\.tif$", "\\1",
-                          list.files(.bm_dir, pattern = "^bm_.+\\.tif$")))
+.bm_cached <- unique(sub(
+  "^bm_(.+)_z[0-9]+\\.tif$",
+  "\\1",
+  list.files(.bm_dir, pattern = "^bm_.+\\.tif$")
+))
 .bm_all_cached <- length(.bm_cached) > 0L &&
-                  all(oz_tracts$GEOID %in% .bm_cached)
+  all(oz_tracts$GEOID %in% .bm_cached)
 
 if (.bm_all_cached) {
-  message("Basemap cache: all ", length(.bm_cached), " tracts cached",
-          " — skipping WMTS connection.\n",
-          "  To regenerate: unlink(\"", .bm_dir, "\", recursive = TRUE)",
-          " then re-run this chunk.")
+  message(
+    "Basemap cache: all ",
+    length(.bm_cached),
+    " tracts cached",
+    " — skipping WMTS connection.\n",
+    "  To regenerate: unlink(\"",
+    .bm_dir,
+    "\", recursive = TRUE)",
+    " then re-run this chunk."
+  )
   .wmts_rasts <- purrr::set_names(vector("list", 5L), as.character(12:16))
-  .wmts_epsg  <- 3857L
+  .wmts_epsg <- 3857L
 } else {
   .n_miss <- sum(!oz_tracts$GEOID %in% .bm_cached)
-  message("Basemap cache: ", length(.bm_cached), " / ", nrow(oz_tracts),
-          " tracts cached — fetching ", .n_miss, " missing tile(s) via WMTS.")
+  message(
+    "Basemap cache: ",
+    length(.bm_cached),
+    " / ",
+    nrow(oz_tracts),
+    " tracts cached — fetching ",
+    .n_miss,
+    " missing tile(s) via WMTS."
+  )
   # Open one connection per zoom level; terra::rast() only reads the capabilities
   # XML here — actual tile data is fetched lazily by terra::crop() per tract.
   .wmts_base <- paste0(
@@ -1143,7 +1159,12 @@ persists `report_data.rds` + `tract_maps.rds` so the export chunks can load them
 
 ```{r}
 #| label: report-build
-#| eval: false
+names_lu <- readr::read_csv(
+  "data/raw/OZ 2.0 Tract Descriptive Names Lookup.csv",
+  col_types = "cc"
+) |>
+  dplyr::rename(GEOID = TractID)
+
 report_data <- tract_info |>
   dplyr::left_join(places_info, by = "GEOID") |>
   dplyr::left_join(centers_info, by = "GEOID") |>
@@ -1152,7 +1173,22 @@ report_data <- tract_info |>
   dplyr::left_join(auto_info, by = "GEOID") |>
   dplyr::left_join(ato_composite_df, by = "GEOID") |>
   dplyr::left_join(growth_info, by = "GEOID") |>
-  dplyr::left_join(ui_info, by = "GEOID")
+  dplyr::left_join(ui_info, by = "GEOID") |>
+  dplyr::left_join(names_lu, by = "GEOID") |>
+  dplyr::mutate(
+    tract_sfx = substr(as.character(GEOID), 6, 11),
+    tract_base = as.integer(substr(tract_sfx, 1, 4)),
+    tract_dec = substr(tract_sfx, 5, 6),
+    TractName = dplyr::coalesce(
+      DescriptiveName,
+      dplyr::if_else(
+        tract_dec == "00",
+        paste0("Tract ", tract_base),
+        paste0("Tract ", tract_base, ".", tract_dec)
+      )
+    )
+  ) |>
+  dplyr::select(-tract_sfx, -tract_base, -tract_dec, -DescriptiveName)
 
 saveRDS(report_data, file.path(remotes_dir, "report_data.rds"))
 saveRDS(tract_maps, file.path(remotes_dir, "tract_maps.rds"))
@@ -1226,8 +1262,11 @@ purrr::walk(county_names, function(county_name) {
   quarto::quarto_render(
     input = "_county_detail.qmd",
     output_file = detail_file,
-    execute_params = list(county = county_name, data_dir = remotes_dir,
-                          map_cache_dir = "data/map_cache")
+    execute_params = list(
+      county = county_name,
+      data_dir = remotes_dir,
+      map_cache_dir = "data/map_cache"
+    )
   )
   file.rename(detail_file, file.path(detail_dir, detail_file))
 })
