@@ -12,33 +12,33 @@ library(dplyr)
 library(showtext)
 library(shadowtext)
 
-font_add_google("Poller One", "poller")
-# System fonts (Windows) — fail silently if absent
-tryCatch(font_add("Arial", "C:/Windows/Fonts/arial.ttf"), error = function(e) {
-  NULL
-})
-tryCatch(
-  font_add("Segoe UI", "C:/Windows/Fonts/segoeui.ttf"),
-  error = function(e) NULL
-)
-tryCatch(
-  font_add("Yu Gothic", "C:/Windows/Fonts/YuGothB.ttc"),
-  error = function(e) NULL
-)
+# ── Google Fonts — loaded unconditionally (no system-font dependency) ──────────
+# JSON font              → Google Fonts substitute          → family alias
+# Poller One Regular     → Poller One                       → "poller"   (exact)
+# Yu Gothic Bold         → Noto Sans JP (wt 700)            → "noto_jp"  (CJK sans, comparable weight)
+# Arial Bold             → Arimo (wt 700)                   → "arimo"    (metrically compatible)
+# Helvetica Bold         → Arimo (wt 700)                   → "arimo"    (same substitute)
+# Arial Bold Italic      → Arimo Bold Italic                → "arimo"
+# Arial Italic           → Arimo Italic                     → "arimo"
+# Segoe UI Semibold      → Source Sans 3 (wt 600)           → "source3"  (near-identical humanist UI)
+# Segoe UI Semibold Ital → Source Sans 3 Italic (wt 600)   → "source3"
+# Verdana Bold Italic    → Bitter Bold Italic               → "bitter"   (comparable humanist bold-italic)
+# Copperplate33bc Reg    → Cinzel (wt 400)                  → "cinzel"   (closest all-caps serif)
+font_add_google("Poller One",    "poller")
+font_add_google("Noto Sans JP",  "noto_jp")
+font_add_google("Arimo",         "arimo")
+font_add_google("Source Sans 3", "source3")
+font_add_google("Bitter",        "bitter")
+font_add_google("Cinzel",        "cinzel")
 showtext_auto()
 
-.F_COUNTY <- "poller"
-.F_CITY <- if ("Yu Gothic" %in% sysfonts::font_families()) {
-  "Yu Gothic"
-} else {
-  "sans"
-}
-.F_HWY <- if ("Arial" %in% sysfonts::font_families()) "Arial" else "sans"
-.F_STREET <- if ("Segoe UI" %in% sysfonts::font_families()) {
-  "Segoe UI"
-} else {
-  "sans"
-}
+# Font family constants — one per JSON font group, used at every .lbl() call
+.F_COUNTY   <- "poller"    # Poller One Regular  → county labels
+.F_CITY     <- "noto_jp"   # Yu Gothic Bold      → city / town labels
+.F_HWY      <- "arimo"     # Arial Bold          → highway labels, contour labels, ski lift labels
+.F_STREET   <- "source3"   # Segoe UI Semibold   → street labels, POI labels (school, health, OSM, trail, ski)
+.F_WATER    <- "bitter"    # Verdana Bold Italic  → bay / water-body labels
+.F_MUNI     <- "cinzel"    # Copperplate33bc      → municipality labels (if used)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. STYLE CONSTANTS
@@ -1818,8 +1818,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_WATER_LBL,
       halo = .C_WATER_HALO,
       sz = .sz_water_lbl(zoom, 0L),
-      face = "italic",
-      fam = .F_STREET
+      face = "bold.italic",
+      fam = .F_WATER
     )
   }
 
@@ -1848,8 +1848,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_WATER_LBL,
         halo = .C_WATER_HALO,
         sz = sz_lake,
-        face = "italic",
-        fam = .F_STREET
+        face = "bold.italic",
+        fam = .F_WATER
       )
     }
   }
@@ -1875,8 +1875,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_WATER_LBL,
         halo = .C_WATER_HALO,
         sz = sz_stm,
-        face = "italic",
-        fam = .F_STREET
+        face = "bold.italic",
+        fam = .F_WATER
       )
     }
   }
@@ -1904,8 +1904,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_MON_LBL,
         halo = .C_MON_HALO,
         sz = sz_mon,
-        face = "bold",
-        fam = .F_STREET
+        face = "plain",
+        fam = .F_MUNI
       )
     }
   }
@@ -1919,7 +1919,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
-      face = "bold",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -1933,7 +1933,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -1949,7 +1949,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -1963,7 +1963,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
-      face = "italic",
+      face = "bold",
       fam = .F_STREET
     )
   }
@@ -1977,7 +1977,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_SKI_LBL,
       halo = .C_SKI_HALO,
       sz = .sz_park_lbl(zoom),
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -1991,7 +1991,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_CTR_LBL,
       halo = .C_CTR_HALO,
       sz = 1.5,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_HWY
     )
   }
@@ -2022,8 +2022,8 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_BAY_LBL,
       halo = .C_BAY_HALO,
       sz = 1.5,
-      face = "italic",
-      fam = .F_STREET
+      face = "bold.italic",
+      fam = .F_WATER
     )
   }
 
@@ -2036,7 +2036,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_GNIS_LBL,
       halo = .C_GNIS_HALO,
       sz = 1.5,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2050,7 +2050,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.7,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2064,7 +2064,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_SKI_LBL,
       halo = .C_POI_HALO_SCH,
       sz = 1.8,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2078,7 +2078,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_TRAIL_LBL,
       halo = .C_TRAIL_HALO_PT,
       sz = 1.7,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2106,7 +2106,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_SCH,
       sz = 1.7,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2120,7 +2120,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.7,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
@@ -2134,7 +2134,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.8,
-      face = "italic",
+      face = "bold.italic",
       fam = .F_STREET
     )
   }
