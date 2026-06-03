@@ -63,6 +63,13 @@ lbl_data  <- .fetch_labels(lu, bu, TEST_ZOOM)
 cat(sprintf("counties=%d  hillshade=%d  roads=%d  interstates=%d\n",
             nrow(ground$counties), nrow(hillshade),
             nrow(roads_raw$roads), nrow(roads_raw$interstates)))
+# ── CRS diagnostic — confirm data is in EPSG:3857 after the safe_read_mvt fix ──
+cat(sprintf("counties CRS epsg: %s\n", sf::st_crs(ground$counties)$epsg))
+cat(sprintf("counties bbox: xmin=%.0f ymin=%.0f xmax=%.0f ymax=%.0f\n",
+            sf::st_bbox(ground$counties)["xmin"], sf::st_bbox(ground$counties)["ymin"],
+            sf::st_bbox(ground$counties)["xmax"], sf::st_bbox(ground$counties)["ymax"]))
+# EXPECTED after fix: epsg=3857, bbox in metres (xmin ≈ -12.5M, ymin ≈ 4.97M)
+# BEFORE fix:         epsg=4326, bbox in degrees (xmin ≈ -112, ymin ≈ 40)
 cat(sprintf("lakes=%d  rivers=%d  trax=%d  commuter=%d  buildings=%d\n",
             nrow(water$lakes), nrow(water$rivers),
             nrow(transit$trax), nrow(transit$commuter_rail), nrow(buildings)))

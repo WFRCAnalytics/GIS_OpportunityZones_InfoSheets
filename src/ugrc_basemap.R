@@ -539,6 +539,14 @@ safe_read_mvt <- function(url, layer_name) {
   }
   lyr$map_symbol <- if (length(sy) > 0) as.character(lyr[[sy[1]]]) else "0"
 
+  # GDAL's MVT driver returns features in OGC:CRS84 (EPSG:4326, lon/lat degrees).
+  # All style constants, linewidths, and pixel-to-metre conversions in this file
+  # assume EPSG:3857 (Web Mercator).  Normalise here once so every caller gets
+  # consistent 3857 geometry and coord_sf(crs=3857, xlim=metres) works correctly.
+  if (!is.na(sf::st_crs(lyr)) && !identical(sf::st_crs(lyr), sf::st_crs(3857L))) {
+    lyr <- sf::st_transform(lyr, 3857L)
+  }
+
   lyr
 }
 
