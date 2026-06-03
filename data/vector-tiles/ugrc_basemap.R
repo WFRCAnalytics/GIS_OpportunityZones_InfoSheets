@@ -255,71 +255,76 @@ showtext_auto()
 # sym 4 = Major Local Paved, sym 5 = Major Local Unpaved
 # sym 6 = Other Federal Aid, sym 7 = Local Roads
 
+# Each entry stores band-START zooms and the linewidth active from that zoom onward.
+# .road_lw() uses findInterval() — a step lookup, not linear interpolation — so flat
+# bands (same width across multiple JSON zoom sub-layers) are reproduced exactly.
+# fil = 0 means no fill pass at that zoom (hairline casing only).
 .RSTOPS <- list(
-  # sym "0ir" = Roads-Interstates-and-Ramps layer (drawn AFTER buildings, JSON idx 362+)
+  # "0ir" — I+R Interstates (drawn AFTER buildings, JSON idx 362+)
   `0ir` = list(
-    z   = c(  6,    8,   10,   12,   14,   16,   18),
-    cas = c(3.00, 4.67, 6.67, 8.00, 9.33, 20.00, 26.67),
-    fil = c(1.33, 2.67, 4.67, 6.00, 7.33, 17.33, 24.00)
+    z   = c( 5,    6,    7,    8,    9,   10,   11,   12,   13,   14,   15,   16,   17,   18),
+    cas = c(2.133,3.000,3.333,4.667,6.000,6.667,7.333,8.000,8.000,9.333,14.667,20.000,25.333,26.667),
+    fil = c(1.333,1.333,1.667,2.667,4.000,4.667,5.333,6.000,6.000,7.333,12.000,17.333,22.667,24.000)
   ),
-  # sym "0" = Roads-white-version Interstates (drawn BEFORE buildings, JSON idx 232-253)
-  # Narrower than I+R; all integer zoom stops included so flat bands are exact.
+  # "0" — Roads-white-version Interstates (before buildings, JSON idx 232-253)
   `0` = list(
     z   = c( 6,    7,    8,    9,   10,   11,   12,   13,   14,   15,   16,   17,   18),
     cas = c(2.667,2.667,4.667,4.667,5.333,6.000,6.667,8.000,9.333,12.000,14.667,18.000,18.667),
     fil = c(1.333,1.333,3.333,3.333,4.000,4.667,5.333,6.667,8.000,10.667,13.333,16.000,17.333)
   ),
+  # "1" — Ramps/Collectors (Roads-white-version, before buildings; also used for I+R ramp fill)
   `1` = list(
-    # Ramps and Collectors
-    z = c(11, 12, 13, 14, 15, 16, 18),
-    cas = c(2.67, 3.67, 4.67, 6.00, 7.67, 9.33, 16.00),
-    fil = c(1.33, 2.00, 3.33, 4.67, 6.00, 7.33, 14.67)
+    z   = c(11,   12,   13,   14,   15,   16,   17,   18),
+    cas = c(2.667,3.667,4.667,6.000,7.667,9.333,16.000,16.000),
+    fil = c(1.333,2.000,3.333,4.667,6.000,7.333,13.333,14.667)
   ),
+  # "2" — US Highways; flat band z10-11 (both cas=4.333)
   `2` = list(
-    # US Highways
-    z = c(6, 8, 10, 12, 14, 16, 18),
-    cas = c(2.00, 3.00, 4.33, 5.33, 8.00, 15.33, 21.33),
-    fil = c(1.00, 1.67, 2.67, 4.00, 6.00, 13.33, 18.67)
+    z   = c( 6,   8,   10,   11,   12,   13,   14,   15,   16,   17,   18),
+    cas = c(2.000,3.000,4.333,4.333,5.333,6.667,8.000,11.333,15.333,20.000,21.333),
+    fil = c(1.000,1.667,2.667,3.333,4.000,4.667,6.000, 8.667,13.333,17.333,18.667)
   ),
+  # "3" — State Highways
   `3` = list(
-    # State Highways
-    z = c(7, 9, 11, 13, 15, 17),
-    cas = c(2.00, 3.00, 4.33, 6.67, 11.33, 20.00),
-    fil = c(0.93, 1.67, 3.33, 4.67, 8.67, 17.33)
+    z   = c( 7,    8,    9,   10,   11,   12,   13,   14,   15,   16,   17,   18),
+    cas = c(2.000,2.667,3.000,4.000,4.333,5.333,6.667,8.000,11.333,15.333,20.000,21.333),
+    fil = c(0.933,1.333,1.667,2.667,3.333,4.000,4.667,6.000, 8.667,13.333,17.333,18.667)
   ),
+  # "4" — Major Local Roads Paved
   `4` = list(
-    # Major Local Roads Paved
-    z = c(9, 10, 11, 12, 13, 14, 15, 17),
-    cas = c(2.33, 2.67, 3.33, 4.00, 5.00, 6.00, 8.00, 20.00),
-    fil = c(1.07, 1.33, 2.00, 2.67, 3.33, 4.67, 6.67, 17.33)
+    z   = c( 9,    10,   11,   12,   13,   14,   15,   16,   17),
+    cas = c(2.333,2.667,3.333,4.000,5.000,6.000, 8.000,13.333,20.000),
+    fil = c(1.067,1.333,2.000,2.667,3.333,4.667, 6.667,12.000,17.333)
   ),
+  # "5" — Major Local Unpaved; flat band z9-12 (cas=2.667, fil=1.333)
   `5` = list(
-    # Major Local Roads Not Paved
-    z = c(11, 12, 13, 14, 15, 17),
-    cas = c(2.67, 3.33, 4.00, 6.00, 6.67, 13.33),
-    fil = c(1.33, 2.00, 2.67, 4.67, 5.33, 12.00)
+    z   = c( 9,   12,   13,   14,   15,   16,   17),
+    cas = c(2.667,3.333,4.000,6.000,6.667,13.333,13.333),
+    fil = c(1.333,2.000,2.667,4.667,5.333,12.000,12.000)
   ),
+  # "6" — Other Federal Aid; z10-11 hairline (cas=0.667, fil=0)
   `6` = list(
-    # Other Federal Aid Roads
-    z = c(11, 12, 13, 14, 15, 17),
-    cas = c(2.67, 3.33, 4.67, 6.00, 6.67, 20.00),
-    fil = c(1.33, 2.00, 3.33, 4.67, 5.33, 17.33)
+    z   = c(10,   11,   12,   13,   14,   15,   16,   17),
+    cas = c(0.667,2.667,3.333,4.667,6.000,6.667,13.333,20.000),
+    fil = c(0,    1.333,2.000,3.333,4.667,5.333,12.000,17.333)
   ),
+  # "7" — Local Roads; z11-12 hairline (cas=0.667, fil=0)
   `7` = list(
-    # Local Roads
-    z = c(12, 13, 14, 15, 16, 17),
-    cas = c(2.67, 3.33, 4.00, 6.00, 9.33, 14.67),
-    fil = c(1.33, 2.00, 2.67, 4.67, 8.00, 13.33)
+    z   = c(11,   12,   13,   14,   15,   16,   17),
+    cas = c(0.667,2.667,3.333,4.000,6.000, 9.333,14.667),
+    fil = c(0,    1.333,2.000,2.667,4.667, 8.000,13.333)
   )
 )
 
+# Step-function lookup — findInterval returns the index of the band that contains zoom.
+# This is correct for the JSON spec which uses discrete flat bands, not linear ramps.
 .road_lw <- function(zoom, sym, type = "cas") {
   k <- as.character(sym)
-  if (!k %in% names(.RSTOPS)) {
-    return(.lw(2.67))
-  } # safe mid-zoom default
+  if (!k %in% names(.RSTOPS)) return(.lw(2.67))
   st <- .RSTOPS[[k]]
-  .lw(approx(st$z, st[[type]], xout = zoom, rule = 2)$y)
+  idx <- findInterval(zoom, st$z, rightmost.closed = TRUE)
+  idx <- max(1L, min(idx, length(st$z)))
+  .lw(st[[type]][idx])
 }
 
 .ROAD_MIN_ZOOM <- c(
@@ -2065,15 +2070,21 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
-  # 14a. I+R Interstates and Ramps — drawn AFTER buildings per JSON (idx 362+)
-  # Uses "0ir" key which has the wider I+R linewidths (distinct from Roads-white-version sym 0).
+  # 14a. I+R Interstates and Ramps — drawn AFTER buildings per JSON (idx 362+).
+  # sym 0 (Interstates): casing + fill via "0ir" key (wider than Roads-white-version).
+  # sym 1 (Ramps): fill only — I+R has no casing layers for ramps; casing already drawn
+  #   before buildings from Roads-white-version. Fill widths match "1" key.
   if (nrow(interstates) > 0) {
-    p <- p +
-      ggplot2::geom_sf(data = interstates, color = .C_ROAD_CAS, linewidth = .road_lw(zoom, "0ir", "cas"))
-    lw_ir_fil <- .road_lw(zoom, "0ir", "fil")
-    if (lw_ir_fil > 0) {
-      p <- p +
-        ggplot2::geom_sf(data = interstates, color = .C_ROAD_FIL, linewidth = lw_ir_fil)
+    ir0 <- interstates[!is.na(interstates$map_symbol) & interstates$map_symbol == "0", ]
+    ir1 <- interstates[!is.na(interstates$map_symbol) & interstates$map_symbol == "1", ]
+    if (nrow(ir0) > 0) {
+      p <- p + ggplot2::geom_sf(data = ir0, color = .C_ROAD_CAS, linewidth = .road_lw(zoom, "0ir", "cas"))
+      lf0 <- .road_lw(zoom, "0ir", "fil")
+      if (lf0 > 0) p <- p + ggplot2::geom_sf(data = ir0, color = .C_ROAD_FIL, linewidth = lf0)
+    }
+    if (nrow(ir1) > 0 && zoom >= 11L) {
+      lf1 <- .road_lw(zoom, "1", "fil")
+      if (lf1 > 0) p <- p + ggplot2::geom_sf(data = ir1, color = .C_ROAD_FIL, linewidth = lf1)
     }
   }
 
