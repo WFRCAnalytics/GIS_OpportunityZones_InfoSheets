@@ -1687,10 +1687,26 @@ build_ugrc_map <- function(bbox, zoom, crs = 3857L, verbose = FALSE) {
   str_lbl <- extract_label_coords(.filter_street_labels(lbl_data$street, zoom))
 
   # Display extent — project input bbox to the requested display CRS.
-  # Using the caller-supplied bbox (not the tile's county extent) ensures the
-  # returned ggplot renders exactly the area requested, which is required for
-  # correct alignment when the plot is rasterized as a background grob.
   bbox_disp <- .bbox_in_crs(bbox, crs)
+
+  # Pre-clip all tile data to bbox_disp so the ggplot auto-detects the correct
+  # extent without needing xlim/ylim in coord_sf.  Avoids ggplot2's default_crs
+  # / xlim-unit ambiguity that causes blank maps when clip limits are in metres.
+  .clip <- function(x) {
+    if (!inherits(x, "sf") || nrow(x) == 0L) return(x)
+    tryCatch(sf::st_crop(x, bbox_disp), error = function(e) x)
+  }
+  .clip_list <- function(lst) lapply(lst, .clip)
+
+  ground    <- .clip_list(ground)
+  water     <- .clip_list(water)
+  rec       <- .clip_list(rec)
+  roads_raw <- .clip_list(roads_raw)
+  transit   <- .clip_list(transit)
+  poi       <- .clip_list(poi)
+  buildings <- .clip(buildings)
+  hillshade <- .clip(hillshade)
+  lbl_data  <- .clip_list(lbl_data)
 
   # ─ Draw stack ─────────────────────────────────────────────────────────────
   p <- ggplot2::ggplot()
