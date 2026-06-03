@@ -696,9 +696,15 @@ extract_label_coords <- function(sf_obj) {
     if (zoom >= 14L) .lw(1.0) else .lw(0.667)
 }
 
-# Stream dasharray → ggplot2 linetype (best available approximation)
-# JSON: z12-13 "7 3 1 2 1 3", z13-14 longer, z14+ similar
-.stream_lty <- function(zoom) if (zoom < 13) "longdash" else "dashed"
+# Stream dasharray → ggplot2 hex linetype (exact JSON values, capped at F=15)
+# JSON z12-13: [7,3,1,2,1,3]           → "731213"  (6-element, each fits 0-F)
+# JSON z13-14: [10.5,4.5,1.5,3,1.5,4.5]→ "A41314"  (10→A, 4, 1, 3, 1, 4)
+# JSON z14+:   [9.33,4,1.33,2.67,1.33,4]→ "941314"  (9, 4, 1, 3, 1, 4)
+.stream_lty <- function(zoom) {
+  if      (zoom < 13) "731213"
+  else if (zoom < 14) "A41314"
+  else                "941314"
+}
 
 # Contour filter — JSON sym 3 (250ft) has a gap at z12-13 (not shown z12-13)
 .filter_contours <- function(ctrs, zoom) {
@@ -817,15 +823,16 @@ extract_label_coords <- function(sf_obj) {
   )$y
 }
 
-# TRAX dashed linetype changes with zoom (JSON dasharray shrinks as zoom increases)
-# z12-14: [5,3] ≈ "53"; z14-16: [3.64,2.18] ≈ "42"; z16+: [2.86,1.71] ≈ "32"
-.trax_lty <- function(zoom) {
-  if (zoom < 14) {
-    "53"
-  } else if (zoom < 16) {
-    "42"
+# TRAX dashed linetype — per symbol and zoom, matching JSON dasharray exactly.
+# sym 7 (R2 Red Line parallel track): uses [3.636,2.182]→"42" starting z12,
+#   others use [5,3]→"53" until z14. sym 7 switches to "32" at z15+.
+.trax_lty <- function(zoom, sym) {
+  if (sym == "7") {
+    if (zoom < 15) "42" else "32"   # z12-15: [3.636,2.182]; z15+: [2.857,1.714]
   } else {
-    "32"
+    if      (zoom < 14) "53"        # [5, 3]
+    else if (zoom < 16) "42"        # [3.636, 2.182]
+    else                "32"        # [2.857, 1.714]
   }
 }
 
@@ -1500,7 +1507,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         fill = NA,
         color = .C_MUNI1_BDR,
         linewidth = .lw(0.667),  # JSON 0.667px
-        linetype = "dotdash"
+        linetype = "C636"   # JSON [12,6,3,6]: long-dash dot pattern
       )
   }
 
@@ -1563,7 +1570,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     if (lwf <= 0) {
       next
     }
-    lty <- if (si == 5L) "22" else "solid"
+    lty <- if (si == 5L) "32" else "solid"   # sym5 unpaved: JSON [3,2] → "32"
     p <- p +
       ggplot2::geom_sf(
         data = rd,
@@ -1623,29 +1630,24 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     p <- p + ggplot2::geom_sf(data=transit$commuter_rail, color=.C_FRONTRUNNER, linewidth=.lw(1.667), linetype="42")
   }
 
-  # TRAX — zoom-interpolated widths; zoom-dependent dasharray; sym 10 solid only
+  # TRAX — loop by map_symbol so sym 7 gets its own per-symbol dash pattern.
+  # Colour comes from trax_color column added by .prepare_trax().
   if (nrow(trax) > 0) {
     lw_cas <- .trax_lw(zoom, "cas")
     lw_fil <- .trax_lw(zoom, "fil")
-    trax_lt <- .trax_lty(zoom)
-    for (cv in unique(trax$trax_color)) {
-      tr_sub <- trax[trax$trax_color == cv, ]
-      p <- p +
-        ggplot2::geom_sf(data = tr_sub, color = .C_TR_CAS, linewidth = lw_cas)
-      p <- p +
-        ggplot2::geom_sf(data = tr_sub, color = .C_TR_FIL, linewidth = lw_fil)
+    for (sym_v in unique(trax$map_symbol)) {
+      tr_sub <- trax[trax$map_symbol == sym_v, ]
+      if (nrow(tr_sub) == 0) next
+      cv      <- tr_sub$trax_color[1]
+      trax_lt <- .trax_lty(zoom, sym_v)   # per-symbol dash per JSON spec
+      p <- p + ggplot2::geom_sf(data=tr_sub, color=.C_TR_CAS, linewidth=lw_cas)
+      p <- p + ggplot2::geom_sf(data=tr_sub, color=.C_TR_FIL, linewidth=lw_fil)
       if (cv != .C_TRAX_DEF) {
-        # All named lines: coloured dashed overlay with 0.8 alpha embedded in colour
-        p <- p +
-          ggplot2::geom_sf(
-            data = tr_sub,
-            color = cv,
-            linewidth = lw_fil,
-            linetype = trax_lt
-          )
+        # Named lines: coloured dashed overlay; 0.8 alpha embedded in colour constant
+        p <- p + ggplot2::geom_sf(data=tr_sub, color=cv, linewidth=lw_fil, linetype=trax_lt)
       } else {
-        # sym 10 (unknown/default): JSON shows single solid #828282 line, no dashed overlay
-        p <- p + ggplot2::geom_sf(data = tr_sub, color = cv, linewidth = lw_cas)
+        # sym 10: single solid gray line, no dashed overlay
+        p <- p + ggplot2::geom_sf(data=tr_sub, color=cv, linewidth=lw_cas)
       }
     }
   }
