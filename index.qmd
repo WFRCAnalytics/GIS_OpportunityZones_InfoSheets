@@ -1000,33 +1000,31 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
     message(sprintf("[make_tract_map] cache HIT — basemap loaded (%d layer(s))", length(bm$layers)))
   }
 
-  # 4. Add OZ layers on top with +; coord_sf crops to tract extent and
-  #    reprojects any layers not yet in map_crs. suppressWarnings() silences
-  #    the "Coordinate system already present" note — the replacement is
-  #    intentional: same CRS, narrower display extent.
-  suppressWarnings(
-    bm +
-      ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
-      ggplot2::scale_fill_manual(values=wc_center_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
-      ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
-      ggplot2::geom_sf(data=sap_diss,   fill=NA, color="#0072b5",  linewidth=0.65, linetype="dashed") +
-      ggplot2::geom_sf(data=focal, fill=NA, color="white",   linewidth=2.8) +
-      ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
-      ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
-      ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
-      ggplot2::coord_sf(
-        xlim   = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
-        ylim   = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
-        crs    = map_crs_sf,
-        expand = FALSE
-      ) +
-      ggplot2::theme_void() +
-      ggplot2::theme(
-        legend.position = "none",
-        plot.background = ggplot2::element_rect(fill="white", color=NA),
-        plot.margin     = ggplot2::margin(0, 0, 0, 0)
-      )
-  )
+  # 4. Add OZ layers on top then append the single coord_sf.
+  #    build_ugrc_map no longer adds coord_sf, so there is no replacement —
+  #    this is the only coord in the plot. ggplot2 projects all layers
+  #    (basemap in 3857, OZ already in map_crs) to map_crs and clips to exp_bbox.
+  bm +
+    ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
+    ggplot2::scale_fill_manual(values=wc_center_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
+    ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
+    ggplot2::geom_sf(data=sap_diss,   fill=NA, color="#0072b5",  linewidth=0.65, linetype="dashed") +
+    ggplot2::geom_sf(data=focal, fill=NA, color="white",   linewidth=2.8) +
+    ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
+    ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
+    ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
+    ggplot2::coord_sf(
+      xlim   = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
+      ylim   = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
+      crs    = map_crs_sf,
+      expand = FALSE
+    ) +
+    ggplot2::theme_void() +
+    ggplot2::theme(
+      legend.position = "none",
+      plot.background = ggplot2::element_rect(fill="white", color=NA),
+      plot.margin     = ggplot2::margin(0, 0, 0, 0)
+    )
 }
 ```
 

@@ -3091,13 +3091,11 @@ build_ugrc_map <- function(bbox, zoom, crs = 3857L, verbose = FALSE) {
   }
 
   # ─ Coordinate system & theme ─────────────────────────────────────────────
+  # No coord_sf here — the caller owns the single coord_sf.
+  # When used standalone, ggplot2 auto-detects extent from the layer data (the
+  # tile's county bbox in EPSG:3857). When used in make_tract_map the caller
+  # appends coord_sf(exp_bbox, crs=map_crs) as the only coord in the plot.
   p +
-    ggplot2::coord_sf(
-      xlim   = c(bbox_disp[["xmin"]], bbox_disp[["xmax"]]),
-      ylim   = c(bbox_disp[["ymin"]], bbox_disp[["ymax"]]),
-      crs    = sf::st_crs(crs),
-      expand = FALSE
-    ) +
     ggplot2::theme_void() +
     ggplot2::theme(
       panel.background = ggplot2::element_rect(fill = .C_CTY_FILL, color = NA)
