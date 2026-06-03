@@ -8,6 +8,32 @@
 source("src/ugrc_basemap.R")
 ugrc_map_init()
 
+# Bbox helpers (defined in index.qmd maps-setup; duplicated here for standalone use)
+.expand_bbox <- function(bbox, factor) {
+  cx <- (bbox["xmin"] + bbox["xmax"]) / 2
+  cy <- (bbox["ymin"] + bbox["ymax"]) / 2
+  hw <- (bbox["xmax"] - bbox["xmin"]) / 2 * factor
+  hh <- (bbox["ymax"] - bbox["ymin"]) / 2 * factor
+  bbox["xmin"] <- cx - hw; bbox["xmax"] <- cx + hw
+  bbox["ymin"] <- cy - hh; bbox["ymax"] <- cy + hh
+  bbox
+}
+.enforce_aspect <- function(bbox, width, height) {
+  target <- width / height
+  bw <- bbox["xmax"] - bbox["xmin"]
+  bh <- bbox["ymax"] - bbox["ymin"]
+  cx <- (bbox["xmin"] + bbox["xmax"]) / 2
+  cy <- (bbox["ymin"] + bbox["ymax"]) / 2
+  if ((bw / bh) > target) {
+    half <- bw / target / 2
+    bbox["ymin"] <- cy - half; bbox["ymax"] <- cy + half
+  } else {
+    half <- bh * target / 2
+    bbox["xmin"] <- cx - half; bbox["xmax"] <- cx + half
+  }
+  bbox
+}
+
 source("src/download_data.R")
 config      <- load_config()
 settings    <- load_settings()
