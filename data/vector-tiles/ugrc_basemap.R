@@ -229,6 +229,8 @@ showtext_auto()
 .C_TRAIL_HALO_PT <- rgb(242, 236, 233, 153, maxColorValue = 255) # rgba(242,236,233,0.60)
 .C_GNIS_LBL <- "#807F7D" # PlaceNamesGNIS2010
 .C_GNIS_HALO <- rgb(230, 228, 225, 140, maxColorValue = 255) # rgba(230,228,225,0.55)
+.C_WEST_STATE     <- "#828282"                                       # WesternStates/label text
+.C_WEST_STATE_HALO <- rgb(242, 240, 237, 128, maxColorValue = 255)  # light halo (no explicit halo in JSON)
 .C_BAY_LBL <- "#829599" # PlaceNamesGNIS2010 - Bay Labels
 .C_BAY_HALO <- rgb(194, 204, 204, 128, maxColorValue = 255) # rgba(194,204,204,0.50)
 .C_SKLIFT_LBL <- "#FFFEFA" # SkiLifts/label text (near-white)
@@ -633,11 +635,9 @@ extract_label_coords <- function(sf_obj) {
     } else {
       .empty_sf()
     },
-    ctr_lbl = if (zoom >= 13) {
-      safe_read_mvt(bu, "Contours_10MeterDEM_50ft_generalized/label")
-    } else {
-      .empty_sf()
-    }
+    ctr_lbl  = if (zoom >= 13) safe_read_mvt(bu, "Contours_10MeterDEM_50ft_generalized/label") else .empty_sf(),
+    # WesternStates/label — line-following state-name labels, z>=8
+    west_lbl = if (zoom >= 8)  safe_read_mvt(bu, "WesternStates/label")                        else .empty_sf()
   )
 }
 
@@ -657,6 +657,66 @@ extract_label_coords <- function(sf_obj) {
   d <- offset_px * .px_to_m(zoom)
   tryCatch(sf::st_buffer(sf_obj, dist = d), error = function(e) sf_obj)
 }
+# Sample repeated label positions along line geometries to replicate
+# Mapbox GL symbol-placement:line with symbol-spacing.
+# spacing_px: JSON symbol-spacing value; zoom: current tile zoom level.
+# Returns a new sf with POINT geometry, one row per label position.
+.line_label_pts <- function(sf_lines, spacing_px, zoom) {
+  if (nrow(sf_lines) == 0) return(sf_lines)
+  spacing_m <- spacing_px * .px_to_m(zoom)
+  crs_out   <- sf::st_crs(sf_lines)
+
+  result <- lapply(seq_len(nrow(sf_lines)), function(i) {
+    row  <- sf_lines[i, , drop = FALSE]
+    geom <- sf::st_geometry(row)[[1L]]
+
+    # Ensure LINESTRING — cast MULTILINESTRING to its first sub-geometry
+    if (inherits(geom, "MULTILINESTRING")) {
+      sub <- sf::st_cast(sf::st_sfc(geom, crs = crs_out), "LINESTRING")
+      if (length(sub) == 0L) return(NULL)
+      geom <- sub[[1L]]
+    }
+    if (!inherits(geom, "LINESTRING")) return(NULL)
+
+    coords <- tryCatch(sf::st_coordinates(sf::st_sfc(geom, crs = crs_out)),
+                       error = function(e) NULL)
+    if (is.null(coords) || nrow(coords) < 2L) return(NULL)
+
+    # Cumulative arc length in map units
+    segs  <- sqrt(diff(coords[, 1L])^2 + diff(coords[, 2L])^2)
+    cdist <- c(0, cumsum(segs))
+    total <- cdist[length(cdist)]
+    if (total <= 0) return(NULL)
+
+    # Decide where to place labels
+    targets <- if (total < spacing_m / 2) {
+      total / 2                              # too short: one label at midpoint
+    } else {
+      seq(spacing_m / 2, total, by = spacing_m)
+    }
+
+    # Interpolate a POINT at each target distance
+    pts <- lapply(targets, function(d) {
+      seg <- max(1L, findInterval(d, cdist, rightmost.closed = TRUE))
+      seg <- min(seg, nrow(coords) - 1L)
+      t   <- if (segs[seg] > 1e-9) (d - cdist[seg]) / segs[seg] else 0
+      x   <- coords[seg, 1L] + t * (coords[seg + 1L, 1L] - coords[seg, 1L])
+      y   <- coords[seg, 2L] + t * (coords[seg + 1L, 2L] - coords[seg, 2L])
+      pt_row          <- row
+      pt_row$geometry <- sf::st_sfc(sf::st_point(c(x, y)), crs = crs_out)
+      pt_row
+    })
+    pts <- Filter(Negate(is.null), pts)
+    if (length(pts) == 0L) return(NULL)
+    do.call(rbind, pts)
+  })
+
+  result <- Filter(Negate(is.null), result)
+  if (length(result) == 0L) return(sf_lines[0L, ])
+  do.call(rbind, result)
+}
+
+
 
 # Shift a LINESTRING geometry perpendicular to its direction by offset_m meters.
 # Replaces the incorrect diagonal shift (geometry + c(dx, dx)) used previously.
@@ -1725,9 +1785,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   # ─ LABELS ────────────────────────────────────────────────────────────────
   # Feature labels drawn first (below city/county labels in z-order)
 
-  # 15a. Great Salt Lake label — italic, water colour, z≥7
+  # 15a. Great Salt Lake label — line-placed, JSON spacing=1000px, z≥7
   if (nrow(lbl_data$gsl) > 0 && any(!is.na(lbl_data$gsl$map_label))) {
-    gsl_lbl <- extract_label_coords(lbl_data$gsl)
+    gsl_lbl <- .line_label_pts(lbl_data$gsl, spacing_px = 1000, zoom = zoom)
+    gsl_lbl <- extract_label_coords(gsl_lbl)
     p <- .lbl(
       p,
       gsl_lbl,
@@ -1772,9 +1833,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
   }
 
-  # 15c. Stream labels — italic, water colour, major z≥8 down to minor z≥12
+  # 15c. Stream labels — line-placed, JSON spacing=1000px (1344 for major)
   if (nrow(lbl_data$streams) > 0 && any(!is.na(lbl_data$streams$map_label))) {
-    stm_lbl <- extract_label_coords(lbl_data$streams)
+    stm_lbl <- .line_label_pts(lbl_data$streams, spacing_px = 1000, zoom = zoom)
+    stm_lbl <- extract_label_coords(stm_lbl)
     cls_stm <- suppressWarnings(as.integer(stm_lbl$map_label_class))
     cls_stm[is.na(cls_stm)] <- 0L
     stm_lbl <- stm_lbl[
@@ -1877,9 +1939,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     )
   }
 
-  # 15h. Trail labels — z≥14 (line-placement not supported; use centroid)
+  # 15h. Trail labels — line-placed, JSON spacing=1000px, z≥14
   if (nrow(lbl_data$trails) > 0 && any(!is.na(lbl_data$trails$map_label))) {
-    trail_lbl <- extract_label_coords(lbl_data$trails)
+    trail_lbl <- .line_label_pts(lbl_data$trails, spacing_px = 1000, zoom = zoom)
+    trail_lbl <- extract_label_coords(trail_lbl)
     p <- .lbl(
       p,
       trail_lbl,
@@ -1907,9 +1970,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     )
   }
 
-  # 15j. Contour elevation labels — Arial Bold Italic, z≥13; centroid approx (line-placement N/A)
+  # 15j. Contour elevation labels — line-placed, JSON spacing=288px, z≥13
   if (nrow(lbl_data$ctr_lbl) > 0 && any(!is.na(lbl_data$ctr_lbl$map_label))) {
-    ctr_lbl_c <- extract_label_coords(lbl_data$ctr_lbl)
+    ctr_lbl_c <- .line_label_pts(lbl_data$ctr_lbl, spacing_px = 288, zoom = zoom)
+    ctr_lbl_c <- extract_label_coords(ctr_lbl_c)
     p <- .lbl(
       p,
       ctr_lbl_c,
@@ -1922,12 +1986,13 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     )
   }
 
-  # 15k. Ski lift labels — #FFFEFA on #B39898 halo, z≥12
+  # 15k. Ski lift labels — line-placed, JSON spacing=1000px, z≥12
   if (
     nrow(lbl_data$ski_lift_lbl) > 0 &&
       any(!is.na(lbl_data$ski_lift_lbl$map_label))
   ) {
-    sklift_lbl_c <- extract_label_coords(lbl_data$ski_lift_lbl)
+    sklift_lbl_c <- .line_label_pts(lbl_data$ski_lift_lbl, spacing_px = 1000, zoom = zoom)
+    sklift_lbl_c <- extract_label_coords(sklift_lbl_c)
     p <- .lbl(
       p,
       sklift_lbl_c,
@@ -2075,7 +2140,20 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     )
   }
 
-  # 15. County labels — Poller One, light text on gray halo
+  # 15u. Western States label — line-placed, Helvetica Regular → arimo, z≥8
+  # JSON: text-color #828282, size 10.667px, spacing 1000px
+  if (!is.null(lbl_data$west_lbl) && nrow(lbl_data$west_lbl) > 0 &&
+      any(!is.na(lbl_data$west_lbl$map_label))) {
+    wst_pts <- .line_label_pts(lbl_data$west_lbl, spacing_px = 1000, zoom = zoom)
+    wst_pts <- extract_label_coords(wst_pts)
+    if (nrow(wst_pts) > 0 && any(!is.na(wst_pts$map_label))) {
+      sz_wst <- .sz(10.667)
+      p <- .lbl(p, wst_pts, col=.C_WEST_STATE, halo=.C_WEST_STATE_HALO,
+                 sz=sz_wst, bgr=.bgr(1.333, sz_wst), face="plain", fam=.F_HWY)
+    }
+  }
+
+    # 15. County labels — Poller One, light text on gray halo
   # Word-wrap to match Mapbox GL text-max-width; draw per label_class so each
   # county gets its own correct text size and colour (not a batch median).
   if (nrow(cnty_lbl) > 0 && any(!is.na(cnty_lbl$map_label))) {
