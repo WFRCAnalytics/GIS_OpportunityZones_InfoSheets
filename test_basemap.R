@@ -1,143 +1,135 @@
 # test_basemap.R — Step-by-step basemap diagnostic
-# Run blocks one at a time in RStudio; each print() shows what that stage
-# produces so you can pinpoint exactly where rendering breaks.
-#
-# Expected progression:
-#   Step 1: gray county fill + hillshade terrain
-#   Step 2: + water (lakes, rivers)
-#   Step 3: + roads (gray casing + white fill)
-#   Step 4: + transit (TRAX coloured dashes, commuter rail)
-#   Step 5: + labels (street names, city names)
-#   Step 6: full basemap from build_ugrc_map()
-#   Step 7: + single focal tract outline (the critical compositing test)
-#   Step 8: + coord_sf clipped to tract extent
-#   Step 9: full make_tract_map() equivalent
+# Prerequisite: run the libraries / prepare / load chunks in index.qmd so
+# oz_tracts, wc_centers, sap_buffers, freeway_exits, uta_stops are available.
+# Steps 0-7 are self-contained (only need src/ugrc_basemap.R).
+# Steps 8-9 need the index.qmd data objects.
 
-# ── 0. Setup ──────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 0. Setup
+# ══════════════════════════════════════════════════════════════════════════════
 source("src/ugrc_basemap.R")
 ugrc_map_init()
 
-# Fixed test coordinates — tract 49035102900, zoom 13, EPSG:3857
 TEST_GEOID <- "49035102900"
-TEST_BBOX  <- sf::st_bbox(
+TEST_ZOOM  <- 13L
+
+# Tract 49035102900 in EPSG:3857 (pre-computed for the diagnostic)
+TEST_BBOX <- sf::st_bbox(
   c(xmin = -12458054, ymin = 4971567,
     xmax = -12454962, ymax = 4975862),
   crs = sf::st_crs(3857L)
 )
-TEST_ZOOM  <- 13L
 
+cat("── 0. Setup ──────────────────────────────────────────────────────────────\n")
 cat(sprintf("bbox  xmin=%.0f  ymin=%.0f  xmax=%.0f  ymax=%.0f\n",
             TEST_BBOX["xmin"], TEST_BBOX["ymin"],
             TEST_BBOX["xmax"], TEST_BBOX["ymax"]))
-cat(sprintf("zoom  %d\n", TEST_ZOOM))
+cat(sprintf("zoom  %d\n\n", TEST_ZOOM))
 
-# ── 1. Tile fetch ─────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. Centre + tile fetch
+# ══════════════════════════════════════════════════════════════════════════════
+cat("── 1. Tile fetch ─────────────────────────────────────────────────────────\n")
 centre <- .bbox_centre_wgs84(TEST_BBOX)
 cat(sprintf("centre  lon=%.5f  lat=%.5f\n", centre$lon, centre$lat))
-# EXPECTED: lon ≈ -111.9, lat ≈ 40.7  (Utah Valley)
-# FAILURE:  lon ≈ -12456508, lat ≈ 4973714  → CRS bug still present
+stopifnot("centre lon must be ~ -111.9" = centre$lon > -113 && centre$lon < -110)
+stopifnot("centre lat must be ~ 40.7"   = centre$lat >   39 && centre$lat <   42)
 
 coords <- get_tile_xyz(centre$lon, centre$lat, TEST_ZOOM)
-cat(sprintf("tile  Z=%d  X=%d  Y=%d\n", coords$z, coords$x, coords$y))
-# EXPECTED: Z=13 X≈1549 Y≈3079
+cat(sprintf("tile  Z=%d  X=%d  Y=%d\n\n", coords$z, coords$x, coords$y))
 
-.url <- function(svc) sprintf(
+.mk_url <- function(svc) sprintf(
   "MVT:https://tiles.arcgis.com/tiles/99lidPhWCzftIe9K/arcgis/rest/services/%s/VectorTileServer/tile/%d/%d/%d.pbf",
   svc, coords$z, coords$y, coords$x
 )
-bu <- .url("LiteBase")
-lu <- .url("LiteLabels")
-hu <- .url("VectorHillshade")
+bu <- .mk_url("LiteBase")
+lu <- .mk_url("LiteLabels")
+hu <- .mk_url("VectorHillshade")
 
-# ── 2. Fetch layer groups ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Layer fetch + CRS verification
+# ══════════════════════════════════════════════════════════════════════════════
+cat("── 2. Layer fetch + CRS check ────────────────────────────────────────────\n")
 ground    <- .fetch_ground(bu)
 hillshade <- .fetch_hillshade(hu, TEST_ZOOM)
 water     <- .fetch_water(bu, TEST_ZOOM)
-rec       <- .fetch_recreation(bu, TEST_ZOOM)
 roads_raw <- .fetch_roads(bu, TEST_ZOOM)
-muni      <- .fetch_muni(bu, TEST_ZOOM)
 transit   <- .fetch_transit(bu, TEST_ZOOM)
-buildings <- .fetch_buildings(bu, TEST_ZOOM)
 lbl_data  <- .fetch_labels(lu, bu, TEST_ZOOM)
 
-cat(sprintf("counties=%d  hillshade=%d  roads=%d  interstates=%d\n",
-            nrow(ground$counties), nrow(hillshade),
-            nrow(roads_raw$roads), nrow(roads_raw$interstates)))
-# ── CRS diagnostic — confirm data is in EPSG:3857 after the safe_read_mvt fix ──
-cat(sprintf("counties CRS epsg: %s\n", sf::st_crs(ground$counties)$epsg))
-cat(sprintf("counties bbox: xmin=%.0f ymin=%.0f xmax=%.0f ymax=%.0f\n",
-            sf::st_bbox(ground$counties)["xmin"], sf::st_bbox(ground$counties)["ymin"],
-            sf::st_bbox(ground$counties)["xmax"], sf::st_bbox(ground$counties)["ymax"]))
-# EXPECTED after fix: epsg=3857, bbox in metres (xmin ≈ -12.5M, ymin ≈ 4.97M)
-# BEFORE fix:         epsg=4326, bbox in degrees (xmin ≈ -112, ymin ≈ 40)
-cat(sprintf("lakes=%d  rivers=%d  trax=%d  commuter=%d  buildings=%d\n",
-            nrow(water$lakes), nrow(water$rivers),
-            nrow(transit$trax), nrow(transit$commuter_rail), nrow(buildings)))
-cat(sprintf("lbl_city=%d  lbl_street=%d\n",
-            nrow(lbl_data$city), nrow(lbl_data$street)))
+# CRS must be 3857 after the safe_read_mvt normalisation fix
+ctys_crs  <- sf::st_crs(ground$counties)$epsg
+ctys_bbox <- sf::st_bbox(ground$counties)
+cat(sprintf("counties  CRS epsg=%s  xmin=%.0f  ymin=%.0f\n",
+            ctys_crs, ctys_bbox["xmin"], ctys_bbox["ymin"]))
+# PASS: epsg=3857, xmin ≈ -12460000 (metres)
+# FAIL: epsg=4326, xmin ≈ -112 (degrees) → safe_read_mvt fix not sourced
 
-# ── STEP 1: Ground + hillshade ────────────────────────────────────────────────
+stopifnot("counties CRS must be 3857 (re-source if failing)" =
+          !is.na(ctys_crs) && ctys_crs == 3857L)
+
+cat(sprintf("roads=%d  interstates=%d  hillshade=%d  trax=%d  commuter=%d\n",
+            nrow(roads_raw$roads), nrow(roads_raw$interstates),
+            nrow(hillshade), nrow(transit$trax), nrow(transit$commuter_rail)))
+cat(sprintf("lbl_street=%d  lbl_city=%d\n\n", nrow(lbl_data$street), nrow(lbl_data$city)))
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Build basemap incrementally — print after each group
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── Step A: ground + hillshade ──────────────────────────────────────────────
 p <- ggplot2::ggplot() +
-  ggplot2::geom_sf(data = ground$counties, fill = .C_CTY_FILL, color = NA) +
+  ggplot2::geom_sf(data=ground$counties, fill=.C_CTY_FILL, color=NA) +
   ggplot2::theme_void() +
-  ggplot2::theme(panel.background = ggplot2::element_rect(fill = .C_CTY_FILL, color = NA))
+  ggplot2::theme(panel.background=ggplot2::element_rect(fill=.C_CTY_FILL, color=NA))
 
-if (nrow(hillshade) > 0) {
-  for (sv in c("0","1","2","3")) {
-    hs <- hillshade[!is.na(hillshade$map_symbol) & hillshade$map_symbol == sv, ]
-    if (nrow(hs) > 0)
-      p <- p + ggplot2::geom_sf(data=hs, fill=.HS_COLORS[[sv]], color=NA,
-                                alpha=.hs_alpha(TEST_ZOOM, as.integer(sv)))
-  }
+for (sv in c("0","1","2","3")) {
+  hs <- hillshade[!is.na(hillshade$map_symbol) & hillshade$map_symbol==sv, ]
+  if (nrow(hs)>0)
+    p <- p + ggplot2::geom_sf(data=hs, fill=.HS_COLORS[[sv]], color=NA,
+                               alpha=.hs_alpha(TEST_ZOOM, as.integer(sv)))
 }
+cat("── Step A: county fill + hillshade ──────────────────────────────────────\n")
+print(p)   # light-gray + terrain shading
 
-cat("\n--- STEP 1: ground + hillshade ---\n")
-print(p)  # should show light-gray county with terrain shading
-
-# ── STEP 2: + water ───────────────────────────────────────────────────────────
+# ── Step B: + water ─────────────────────────────────────────────────────────
 lake_gsl   <- if (nrow(water$lakes)>0) water$lakes[water$lakes$map_symbol=="0",] else water$lakes[0,]
 lake_other <- if (nrow(water$lakes)>0) water$lakes[water$lakes$map_symbol!="0",] else water$lakes[0,]
-if (nrow(lake_gsl)   > 0) p <- p + ggplot2::geom_sf(data=lake_gsl,   fill=.C_GSL_FILL,  color="#BBBFBF", linewidth=.lw(1))
-if (nrow(lake_other) > 0) p <- p + ggplot2::geom_sf(data=lake_other, fill=.C_LAKE_FILL, color=.C_LAKE_BDR, linewidth=.lw(1))
+if (nrow(lake_gsl)   >0) p <- p + ggplot2::geom_sf(data=lake_gsl,   fill=.C_GSL_FILL,  color="#BBBFBF", linewidth=.lw(1))
+if (nrow(lake_other) >0) p <- p + ggplot2::geom_sf(data=lake_other, fill=.C_LAKE_FILL, color=.C_LAKE_BDR, linewidth=.lw(1))
 if (nrow(water$rivers)>0) p <- p + ggplot2::geom_sf(data=water$rivers, fill=.C_RIVER_FILL, color=.C_RIVER_BDR, linewidth=.lw(1))
-
-cat("\n--- STEP 2: + water ---\n")
+cat("\n── Step B: + water ──────────────────────────────────────────────────────\n")
 print(p)
 
-# ── STEP 3: + roads ───────────────────────────────────────────────────────────
+# ── Step C: + roads ─────────────────────────────────────────────────────────
 roads       <- roads_raw$roads
 interstates <- roads_raw$interstates
 .rsym <- function(sym) {
   if (nrow(roads)==0) return(roads[0,])
-  roads[!is.na(roads$map_symbol) & roads$map_symbol==as.character(sym),]
+  roads[!is.na(roads$map_symbol) & roads$map_symbol==as.character(sym), ]
 }
-road_cas_order <- c(4L,2L,3L,6L,5L,7L,1L,0L)
-road_fil_order <- c(7L,5L,6L,4L,3L,2L,1L,0L)
-
-for (si in road_cas_order) {
-  if (TEST_ZOOM < .ROAD_MIN_ZOOM[as.character(si)]) next
-  rd <- .rsym(si)
-  if (nrow(rd)==0) next
-  cas_col <- if (si==5L && TEST_ZOOM<11L) "#BABABA" else if (si==6L && TEST_ZOOM<11L) "#B0B0B0" else .C_ROAD_CAS
-  p <- p + ggplot2::geom_sf(data=rd, color=cas_col, linewidth=.road_lw(TEST_ZOOM, si, "cas"))
-}
-for (si in road_fil_order) {
+for (si in c(4L,2L,3L,6L,5L,7L,1L,0L)) {   # casing pass
   if (TEST_ZOOM < .ROAD_MIN_ZOOM[as.character(si)]) next
   rd <- .rsym(si); if (nrow(rd)==0) next
-  lwf <- .road_lw(TEST_ZOOM, si, "fil"); if (lwf<=0) next
+  cas_col <- if (si==6L && TEST_ZOOM<11L) "#B0B0B0" else .C_ROAD_CAS
+  p <- p + ggplot2::geom_sf(data=rd, color=cas_col, linewidth=.road_lw(TEST_ZOOM,si,"cas"))
+}
+for (si in c(7L,5L,6L,4L,3L,2L,1L,0L)) {   # fill pass
+  if (TEST_ZOOM < .ROAD_MIN_ZOOM[as.character(si)]) next
+  rd <- .rsym(si); if (nrow(rd)==0) next
+  lwf <- .road_lw(TEST_ZOOM,si,"fil"); if (lwf<=0) next
   p <- p + ggplot2::geom_sf(data=rd, color=.C_ROAD_FIL, linewidth=lwf,
-                             linetype=if(si==5L)"32" else "solid")
+                              linetype=if(si==5L)"32" else "solid")
 }
 if (nrow(interstates)>0) {
   p <- p + ggplot2::geom_sf(data=interstates, color=.C_ROAD_CAS, linewidth=.road_lw(TEST_ZOOM,"0ir","cas"))
   lf <- .road_lw(TEST_ZOOM,"0ir","fil")
   if (lf>0) p <- p + ggplot2::geom_sf(data=interstates, color=.C_ROAD_FIL, linewidth=lf)
 }
-
-cat("\n--- STEP 3: + roads ---\n")
+cat("\n── Step C: + roads ──────────────────────────────────────────────────────\n")
 print(p)
 
-# ── STEP 4: + transit ─────────────────────────────────────────────────────────
+# ── Step D: + transit ───────────────────────────────────────────────────────
 trax <- .prepare_trax(transit$trax, TEST_ZOOM)
 if (nrow(transit$commuter_rail)>0) {
   p <- p +
@@ -152,71 +144,109 @@ if (nrow(trax)>0) {
     cv <- tr$trax_color[1]
     p <- p + ggplot2::geom_sf(data=tr, color=.C_TR_CAS, linewidth=lw_cas)
     p <- p + ggplot2::geom_sf(data=tr, color=.C_TR_FIL, linewidth=lw_fil)
-    if (cv != .C_TRAX_DEF)
-      p <- p + ggplot2::geom_sf(data=tr, color=cv, linewidth=lw_fil, linetype=.trax_lty(TEST_ZOOM,sym_v))
-    else
-      p <- p + ggplot2::geom_sf(data=tr, color=cv, linewidth=lw_fil)
+    if (cv!=.C_TRAX_DEF) p <- p + ggplot2::geom_sf(data=tr, color=cv, linewidth=lw_fil, linetype=.trax_lty(TEST_ZOOM,sym_v))
+    else                  p <- p + ggplot2::geom_sf(data=tr, color=cv, linewidth=lw_fil)
   }
 }
-
-cat("\n--- STEP 4: + transit ---\n")
+cat("\n── Step D: + transit ────────────────────────────────────────────────────\n")
 print(p)
 
-# ── STEP 5: + basic street labels ─────────────────────────────────────────────
+# ── Step E: + street + city labels ──────────────────────────────────────────
 str_lbl <- extract_label_coords(.filter_street_labels(lbl_data$street, TEST_ZOOM))
 if (nrow(str_lbl)>0 && any(!is.na(str_lbl$map_label))) {
   cls_i <- as.integer(suppressWarnings(median(str_lbl$map_label_class, na.rm=TRUE)))
-  sz    <- .sz_street(TEST_ZOOM, if(is.na(cls_i)) NA_integer_ else cls_i)
+  sz <- .sz_street(TEST_ZOOM, if(is.na(cls_i)) NA_integer_ else cls_i)
   p <- .lbl(p, str_lbl, col=.C_STR, halo=.C_STR_HALO, sz=sz, bgr=.bgr(1.333,sz), face="bold", fam=.F_STREET)
 }
 city_lbl <- extract_label_coords(.filter_city_labels(lbl_data$city, TEST_ZOOM))
 if (nrow(city_lbl)>0 && any(!is.na(city_lbl$map_label))) {
   cls_i <- as.integer(suppressWarnings(median(city_lbl$map_label_class, na.rm=TRUE)))
-  sz    <- .sz_city(TEST_ZOOM, if(is.na(cls_i)) 0L else cls_i)
+  sz <- .sz_city(TEST_ZOOM, if(is.na(cls_i)) 0L else cls_i)
   p <- .lbl(p, city_lbl, col=.C_CITY, halo=.C_CITY_HALO, sz=sz, bgr=.bgr(1.333,sz), face="bold", fam=.F_CITY)
 }
-
-cat("\n--- STEP 5: + labels ---\n")
+cat("\n── Step E: + labels ─────────────────────────────────────────────────────\n")
 print(p)
 
-# ── STEP 6: full build_ugrc_map() ─────────────────────────────────────────────
-cat("\n--- STEP 6: build_ugrc_map() standalone (no coord_sf) ---\n")
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. build_ugrc_map() full
+# ══════════════════════════════════════════════════════════════════════════════
+cat("\n── Step F: build_ugrc_map() — no coord_sf yet ───────────────────────────\n")
 bm <- build_ugrc_map(TEST_BBOX, TEST_ZOOM, crs=3857L, verbose=TRUE)
-cat(sprintf("bm has %d layer(s)\n", length(bm$layers)))
-print(bm)
-# EXPECTED: basemap visible over the full tile extent, NO coord crop
+cat(sprintf("bm layers: %d\n", length(bm$layers)))
+print(bm)   # full basemap, auto-extent from data
 
-# ── STEP 7: + coord_sf only ───────────────────────────────────────────────────
-cat("\n--- STEP 7: bm + coord_sf (crop to bbox, no OZ layers yet) ---\n")
-p7 <- bm +
-  ggplot2::coord_sf(
-    xlim = c(TEST_BBOX["xmin"], TEST_BBOX["xmax"]),
-    ylim = c(TEST_BBOX["ymin"], TEST_BBOX["ymax"]),
-    crs  = sf::st_crs(3857L), expand = FALSE
-  )
-print(p7)
-# EXPECTED: basemap cropped to bbox extent
-# FAILURE:  blank white → coord_sf alone is the problem
-
-# ── STEP 8: + one OZ layer then coord_sf ──────────────────────────────────────
-cat("\n--- STEP 8: bm + one sf layer + coord_sf ---\n")
-# Load the focal tract in 3857 for the test
-focal_test <- sf::st_transform(
-  dplyr::filter(oz_tracts, GEOID == TEST_GEOID),
-  sf::st_crs(3857L)
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. coord_sf crop — the key compositing test
+# ══════════════════════════════════════════════════════════════════════════════
+cat("\n── Step G: bm + coord_sf crop only ─────────────────────────────────────\n")
+p_g <- bm + ggplot2::coord_sf(
+  xlim = c(TEST_BBOX[["xmin"]], TEST_BBOX[["xmax"]]),   # [[ avoids named-vector issues
+  ylim = c(TEST_BBOX[["ymin"]], TEST_BBOX[["ymax"]]),
+  crs  = sf::st_crs(3857L), expand = FALSE
 )
-p8 <- bm +
-  ggplot2::geom_sf(data=focal_test, fill=NA, color="red", linewidth=1.5) +
+print(p_g)
+# PASS: basemap visible, cropped to tract bbox
+# FAIL: blank/gray → data not yet in 3857 (re-source after safe_read_mvt fix)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. Add OZ layers (requires index.qmd data objects)
+# ══════════════════════════════════════════════════════════════════════════════
+if (!exists("oz_tracts")) {
+  message("oz_tracts not found — run index.qmd load chunks first, then re-run from here")
+  stop("missing oz_tracts", call. = FALSE)
+}
+
+cat("\n── Step H: bm + focal tract only + coord_sf ─────────────────────────────\n")
+focal_3857 <- sf::st_transform(dplyr::filter(oz_tracts, GEOID==TEST_GEOID), sf::st_crs(3857L))
+p_h <- bm +
+  ggplot2::geom_sf(data=focal_3857, fill=NA, color="red", linewidth=2) +
   ggplot2::coord_sf(
-    xlim = c(TEST_BBOX["xmin"], TEST_BBOX["xmax"]),
-    ylim = c(TEST_BBOX["ymin"], TEST_BBOX["ymax"]),
+    xlim = c(TEST_BBOX[["xmin"]], TEST_BBOX[["xmax"]]),
+    ylim = c(TEST_BBOX[["ymin"]], TEST_BBOX[["ymax"]]),
     crs  = sf::st_crs(3857L), expand = FALSE
   )
-print(p8)
-# EXPECTED: basemap + red focal tract outline
-# FAILURE:  just red outline on white → basemap lost after + geom_sf
+print(p_h)
+# PASS: basemap + red tract outline visible
 
-# ── STEP 9: make_tract_map() ─────────────────────────────────────────────────
-cat("\n--- STEP 9: make_tract_map() full ---\n")
-p9 <- make_tract_map(TEST_GEOID)
-print(p9)
+cat("\n── Step I: full OZ overlay inline (make_tract_map equivalent) ───────────\n")
+map_crs_sf <- sf::st_crs(3857L)
+focal      <- sf::st_transform(dplyr::filter(oz_tracts, GEOID==TEST_GEOID), map_crs_sf)
+other_oz   <- sf::st_transform(dplyr::filter(oz_tracts, GEOID!=TEST_GEOID), map_crs_sf)
+wc_view    <- sf::st_filter(sf::st_transform(wc_centers,    map_crs_sf), sf::st_as_sfc(TEST_BBOX))
+exits_view <- sf::st_filter(sf::st_transform(freeway_exits, map_crs_sf), sf::st_as_sfc(TEST_BBOX))
+stops_view <- sf::st_filter(sf::st_transform(uta_stops,     map_crs_sf), sf::st_as_sfc(TEST_BBOX))
+sap_view   <- sf::st_filter(sf::st_transform(sap_buffers,   map_crs_sf), sf::st_as_sfc(TEST_BBOX))
+other_view <- sf::st_filter(other_oz, sf::st_as_sfc(TEST_BBOX))
+sap_diss   <- if (nrow(sap_view)>0L) sf::st_union(sap_view) else sap_view
+wc_colors  <- c(
+  "Metropolitan Center"="#bc5f8c", "Urban Center"="#ec8369", "City Center"="#f5b86e",
+  "Neighborhood Center"="#fae55c", "Education District"="#cbe3e1",
+  "Employment District"="#f6c4da", "Industrial District"="#eadbf4",
+  "Retail District"="#f8dddf",     "Special District"="#d3d3d3"
+)
+cat(sprintf("wc=%d  other_oz=%d  exits=%d  stops=%d  sap=%d\n",
+            nrow(wc_view), nrow(other_view), nrow(exits_view),
+            nrow(stops_view), nrow(sap_view)))
+
+p_i <- bm +
+  ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
+  ggplot2::scale_fill_manual(values=wc_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
+  ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
+  ggplot2::geom_sf(data=sap_diss,   fill=NA, color="#0072b5",  linewidth=0.65, linetype="dashed") +
+  ggplot2::geom_sf(data=focal, fill=NA, color="white",   linewidth=2.8) +
+  ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
+  ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5) +
+  ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
+  ggplot2::coord_sf(
+    xlim = c(TEST_BBOX[["xmin"]], TEST_BBOX[["xmax"]]),
+    ylim = c(TEST_BBOX[["ymin"]], TEST_BBOX[["ymax"]]),
+    crs  = map_crs_sf, expand = FALSE
+  ) +
+  ggplot2::theme_void() +
+  ggplot2::theme(
+    legend.position = "none",
+    plot.background = ggplot2::element_rect(fill="white", color=NA),
+    plot.margin     = ggplot2::margin(0,0,0,0)
+  )
+print(p_i)
+# PASS: basemap + all OZ overlays; this is what make_tract_map should produce
