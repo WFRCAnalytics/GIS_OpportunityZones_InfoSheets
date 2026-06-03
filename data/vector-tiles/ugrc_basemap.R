@@ -10,6 +10,7 @@ library(sf)
 library(ggplot2)
 library(dplyr)
 library(showtext)
+library(shadowtext)
 
 font_add_google("Poller One", "poller")
 # System fonts (Windows) — fail silently if absent
@@ -724,26 +725,21 @@ extract_label_coords <- function(sf_obj) {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 9. LABEL DRAW HELPER (no shadowtext dependency)
+# 9. LABEL DRAW HELPER
 # ══════════════════════════════════════════════════════════════════════════════
-# Approximates JSON text-halo-color by drawing text twice:
-#   pass 1 — halo colour, check_overlap=FALSE (always draw all halos)
-#   pass 2 — label colour, check_overlap=TRUE  (suppress true overlaps at actual size)
-# Keeping both passes independent ensures labels are never silently dropped by
-# halo-size inflation (1.25×) interfering with the label-size overlap check.
+# Uses shadowtext::geom_shadowtext() for clean single-pass halo rendering.
+# bg.color = halo colour from JSON spec; bg.r controls halo spread.
 
 .lbl <- function(p, data, col, halo, sz, face = "bold", fam = "") {
   if (nrow(data) == 0 || !any(!is.na(data$map_label))) return(p)
   dat <- dplyr::filter(data, !is.na(map_label))
-  mp  <- ggplot2::aes(x = X, y = Y, label = map_label)
-  # Halo: no overlap check — every label gets a halo background
-  p <- p + ggplot2::geom_text(data=dat, mapping=mp,
-             color=halo, size=sz*1.25, fontface=face, family=fam,
-             check_overlap=FALSE)
-  # Label text: overlap check at actual size to suppress truly crowded labels
-  p + ggplot2::geom_text(data=dat, mapping=mp,
-             color=col, size=sz, fontface=face, family=fam,
-             check_overlap=TRUE)
+  p + shadowtext::geom_shadowtext(
+    data    = dat,
+    mapping = ggplot2::aes(x = X, y = Y, label = map_label),
+    color   = col, bg.color = halo,
+    bg.r    = 0.15, size = sz, fontface = face, family = fam,
+    check_overlap = TRUE
+  )
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
