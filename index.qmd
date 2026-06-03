@@ -26,7 +26,6 @@ library(stringr)
 
 # Mapping and output
 library(ggplot2)
-library(patchwork)
 library(knitr)
 
 # Report assembly
@@ -911,118 +910,105 @@ source("src/ugrc_basemap.R")
 ugrc_map_init()
 
 # ── Basemap cache — single RDS ────────────────────────────────────────────────
-# All basemap ggplots are stored in one named list: data/remotes/basemap_cache.rds
+# All basemap ggplots stored as a named list: data/remotes/basemap_cache.rds
 # Key = GEOID. Run maps-basemap-cache to populate; make_tract_map falls back to
-# live generation if a GEOID is missing from the cache.
+# live generation for any GEOID not yet in the cache.
 .bm_cache_path <- file.path(remotes_dir, "basemap_cache.rds")
 basemap_cache  <- if (file.exists(.bm_cache_path)) readRDS(.bm_cache_path) else list()
 
-# ── Shared bbox helper (used by pre-gen and make_tract_map) ───────────────────
-.tract_bbox_zoom <- function(geoid) {
-  focal    <- dplyr::filter(oz_tracts, GEOID == geoid)
-  exp_bb   <- .enforce_aspect(
-    .expand_bbox(sf::st_bbox(focal), factor = 1.2),
-    map_width_in, map_height_in
-  )
-  view     <- sf::st_as_sfc(sf::st_bbox(
+# ── Shared geometry helper ────────────────────────────────────────────────────
+# Returns the expanded bbox (as sf::st_bbox with CRS attached) and zoom level
+# for a given tract in the specified display CRS. Used by both make_tract_map
+# and the pre-gen cache chunk so the geometry logic lives in one place.
+.tract_bbox_zoom <- function(geoid, map_crs = 3857L) {
+  map_crs_sf <- sf::st_crs(map_crs)
+  focal   <- sf::st_transform(dplyr::filter(oz_tracts, GEOID == geoid), map_crs_sf)
+  exp_bb  <- .enforce_aspect(.expand_bbox(sf::st_bbox(focal), 1.2), map_width_in, map_height_in)
+  # Reconstruct as a proper bbox with CRS attached (avoids [<- attribute-loss)
+  exp_bbox <- sf::st_bbox(
     c(xmin=exp_bb[["xmin"]], ymin=exp_bb[["ymin"]],
       xmax=exp_bb[["xmax"]], ymax=exp_bb[["ymax"]]),
-    crs = sf::st_crs(crs)
-  ))
-  view_w_m <- exp_bb[["xmax"]] - exp_bb[["xmin"]]
+    crs = map_crs_sf
+  )
+  view     <- sf::st_as_sfc(exp_bbox)
   lat_rad  <- sf::st_coordinates(
     sf::st_transform(sf::st_centroid(view), 4326L)
   )[1L, "Y"] * pi / 180
+  view_w_m <- exp_bb[["xmax"]] - exp_bb[["xmin"]]
   zoom <- max(12L, min(16L, as.integer(
     round(log2(40075016.686 * cos(lat_rad) / view_w_m * 8)) - 3L
   )))
-  bbox_display <- .bbox_in_crs(
-    sf::st_bbox(c(xmin=exp_bb[["xmin"]], ymin=exp_bb[["ymin"]],
-                  xmax=exp_bb[["xmax"]], ymax=exp_bb[["ymax"]]),
-                crs = sf::st_crs(crs)),
-    3857L
-  )
-  list(exp_bb = exp_bb, bbox_display = bbox_display, zoom = zoom, view = view)
+  list(bbox = exp_bbox, zoom = zoom)
 }
 
 # ── Tract map builder ─────────────────────────────────────────────────────────
-# Compositing: build_ugrc_map() returns a self-contained ggplot with its own
-# coord_sf. OZ overlay is a separate ggplot with transparent background and the
-# same coord_sf. patchwork::inset_element() places the overlay on top of the
-# basemap exactly covering the panel — no coord-replacement, no grob rasterization.
+# Workflow:
+#   1. Normalise CRS — transform all overlay layers to map_crs upfront.
+#   2. Bounding box — expand the focal tract's bbox and enforce aspect ratio.
+#   3. Basemap — load cached ggplot (or generate live) for that exact bbox.
+#   4. Overlay — add OZ layers with + directly on top of the basemap ggplot.
+#      ggplot2 reprojects all layers to map_crs at render time via coord_sf;
+#      replacing the basemap's coord_sf with the tract-level one is safe
+#      because both use the same CRS — only the display extent changes.
 
 make_tract_map <- function(geoid, map_crs = 3857L) {
-  focal    <- dplyr::filter(oz_tracts, GEOID == geoid)
-  other_oz <- dplyr::filter(oz_tracts, GEOID != geoid)
+  map_crs_sf <- sf::st_crs(map_crs)
 
-  geo      <- .tract_bbox_zoom(geoid)
-  exp_bb   <- geo$exp_bb
+  # 1. All overlay layers in map_crs
+  focal      <- sf::st_transform(dplyr::filter(oz_tracts, GEOID == geoid),     map_crs_sf)
+  other_oz   <- sf::st_transform(dplyr::filter(oz_tracts, GEOID != geoid),     map_crs_sf)
+  wc_all     <- sf::st_transform(wc_centers,    map_crs_sf)
+  exits_all  <- sf::st_transform(freeway_exits, map_crs_sf)
+  stops_all  <- sf::st_transform(uta_stops,     map_crs_sf)
+  sap_all    <- sf::st_transform(sap_buffers,   map_crs_sf)
+
+  # 2. Bbox + zoom from focal tract
+  geo      <- .tract_bbox_zoom(geoid, map_crs)
+  exp_bbox <- geo$bbox        # sf::st_bbox in map_crs
   zoom     <- geo$zoom
-  view     <- geo$view
-  bbox_display <- if (map_crs == 3857L) geo$bbox_display else
-    .bbox_in_crs(
-      sf::st_bbox(c(xmin=exp_bb[["xmin"]], ymin=exp_bb[["ymin"]],
-                    xmax=exp_bb[["xmax"]], ymax=exp_bb[["ymax"]]),
-                  crs = sf::st_crs(crs)),
-      map_crs
-    )
+  view     <- sf::st_as_sfc(exp_bbox)
 
-  # 1. Basemap — from single RDS cache or live generation
+  # Spatial filter to view extent (all layers now share map_crs)
+  wc_view    <- sf::st_filter(wc_all,    view)
+  other_view <- sf::st_filter(other_oz,  view)
+  exits_view <- sf::st_filter(exits_all, view)
+  stops_view <- sf::st_filter(stops_all, view)
+  sap_view   <- sf::st_filter(sap_all,   view)
+  sap_diss   <- if (nrow(sap_view) > 0L) sf::st_union(sap_view) else sap_view
+
+  # 3. Basemap — load from cache or generate live
   bm <- basemap_cache[[geoid]]
   if (is.null(bm)) {
     message("Basemap not cached for ", geoid, " — generating live (run maps-basemap-cache to persist)")
-    bm <- build_ugrc_map(bbox_display, zoom, crs = map_crs)
+    bm <- build_ugrc_map(exp_bbox, zoom, crs = map_crs)
   }
-  # Apply outer-plot styling to basemap (white background, no margin)
-  bm <- bm + ggplot2::theme(
-    plot.background = ggplot2::element_rect(fill = "white", color = NA),
-    plot.margin     = ggplot2::margin(0, 0, 0, 0)
-  )
 
-  # 2. Hoist spatial filters
-  wc_view    <- sf::st_filter(wc_centers,    view)
-  other_view <- sf::st_filter(other_oz,      view)
-  exits_view <- sf::st_filter(freeway_exits, view)
-  stops_view <- sf::st_filter(uta_stops,     view)
-  sap_view   <- sf::st_filter(sap_buffers,   view)
-  sap_diss   <- if (nrow(sap_view) > 0L) sf::st_union(sap_view) else sap_view
-
-  # 3. OZ overlay — transparent background so basemap shows through
-  oz_overlay <- ggplot2::ggplot() +
-    ggplot2::geom_sf(
-      data  = wc_view,
-      ggplot2::aes(fill = CenterType),
-      color = NA, alpha = 0.6
-    ) +
-    ggplot2::scale_fill_manual(
-      values = wc_center_colors, name = NULL, na.value = "#C8C0C0", drop = TRUE
-    ) +
-    ggplot2::geom_sf(data = other_view, fill = NA, color = "#C4A43A", linewidth = 0.3) +
-    ggplot2::geom_sf(data = sap_diss,   fill = NA, color = "#0072b5", linewidth = 0.65, linetype = "dashed") +
-    ggplot2::geom_sf(data = focal, fill = NA, color = "white",   linewidth = 2.8) +
-    ggplot2::geom_sf(data = focal, fill = NA, color = "#003b4f", linewidth = 1.6) +
-    ggplot2::geom_sf(data = exits_view, shape = 17, color = "#3A4A5A", size = 5.0) +
-    ggplot2::geom_sf(data = stops_view, shape = 21, fill = "#943030", color = "white", size = 5, stroke = 0.4) +
-    ggplot2::coord_sf(
-      xlim   = c(bbox_display[["xmin"]], bbox_display[["xmax"]]),
-      ylim   = c(bbox_display[["ymin"]], bbox_display[["ymax"]]),
-      crs    = sf::st_crs(map_crs),
-      expand = FALSE
-    ) +
-    ggplot2::theme_void() +
-    ggplot2::theme(
-      legend.position  = "none",
-      panel.background = ggplot2::element_rect(fill = NA, color = NA),
-      plot.background  = ggplot2::element_rect(fill = NA, color = NA)
-    )
-
-  # 4. Composite — basemap under, OZ overlay on top, full-panel inset
-  bm + patchwork::inset_element(
-    oz_overlay,
-    left = 0, bottom = 0, right = 1, top = 1,
-    align_to = "panel",
-    on_top   = TRUE,
-    clip     = FALSE
+  # 4. Add OZ layers on top with +; coord_sf crops to tract extent and
+  #    reprojects any layers not yet in map_crs. suppressWarnings() silences
+  #    the "Coordinate system already present" note — the replacement is
+  #    intentional: same CRS, narrower display extent.
+  suppressWarnings(
+    bm +
+      ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
+      ggplot2::scale_fill_manual(values=wc_center_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
+      ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
+      ggplot2::geom_sf(data=sap_diss,   fill=NA, color="#0072b5",  linewidth=0.65, linetype="dashed") +
+      ggplot2::geom_sf(data=focal, fill=NA, color="white",   linewidth=2.8) +
+      ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
+      ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
+      ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
+      ggplot2::coord_sf(
+        xlim   = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
+        ylim   = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
+        crs    = map_crs_sf,
+        expand = FALSE
+      ) +
+      ggplot2::theme_void() +
+      ggplot2::theme(
+        legend.position = "none",
+        plot.background = ggplot2::element_rect(fill="white", color=NA),
+        plot.margin     = ggplot2::margin(0, 0, 0, 0)
+      )
   )
 }
 ```
@@ -1035,11 +1021,11 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
 # the tile server.
 new_geoids <- setdiff(oz_tracts$GEOID, names(basemap_cache))
 if (length(new_geoids) > 0L) {
-  message("Building ", length(new_geoids), " missing basemap(s)…")
+  message("Building ", length(new_geoids), " missing basemap(s)...")
   new_bms <- purrr::set_names(
     purrr::map(new_geoids, function(geoid) {
-      geo <- .tract_bbox_zoom(geoid)
-      bm  <- build_ugrc_map(geo$bbox_display, geo$zoom, crs = 3857L)
+      geo <- .tract_bbox_zoom(geoid, map_crs = 3857L)
+      bm  <- build_ugrc_map(geo$bbox, geo$zoom, crs = 3857L)
       message("  cached: ", geoid, " z", geo$zoom)
       bm
     }),
