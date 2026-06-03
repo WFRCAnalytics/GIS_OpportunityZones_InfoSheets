@@ -492,7 +492,7 @@ get_tile_xyz <- function(lon, lat, zoom) {
 # order: first axis = Southing (south direction), second = Westing (west).
 # We declare this as a proper WKT2 CRS so PROJ can compute the correct
 # transformation to canonical EPSG:3857 (Easting, Northing) via st_transform.
-.ESRI_MVT_CRS <- sf::st_crs(wkt = '
+.ESRI_MVT_CRS <- sf::st_crs('
 PROJCRS["WGS 84 / Pseudo-Mercator (Southing, Westing)",
   BASEGEOGCRS["WGS 84",
     DATUM["World Geodetic System 1984",
