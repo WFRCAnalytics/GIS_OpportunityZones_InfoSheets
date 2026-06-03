@@ -733,6 +733,20 @@ extract_label_coords <- function(sf_obj) {
   line_geom + c(-dy / len * offset_m, dx / len * offset_m)
 }
 
+# TRAX line-offset per symbol and zoom band — raw JSON CSS pixel values.
+# JSON has three zoom bands: z12-14, z14-16, z16+. sym 7 changes at z15.
+# Positive = right of travel direction (perpendicular outward shift).
+.trax_offset_px <- function(zoom, sym) {
+  switch(sym,
+    "1" = if (zoom < 14) -1.667 else if (zoom < 16) -2.0   else -2.333,
+    "2" = if (zoom < 14) -2.667 else if (zoom < 16) -4.0   else -4.667,
+    "4" = if (zoom < 14)  1.667 else if (zoom < 16)  2.0   else  2.333,
+    "7" = if (zoom < 15)  2.0   else if (zoom < 16)  2.0   else  2.333,
+    "8" = if (zoom < 14)  2.667 else if (zoom < 16)  4.0   else  4.667,
+    0   # sym 0,3,5,6,9,10: no offset (centre track)
+  )
+}
+
 .prepare_trax <- function(trax, zoom) {
   if (nrow(trax) == 0) {
     return(trax)
@@ -747,14 +761,10 @@ extract_label_coords <- function(sf_obj) {
         map_symbol == "9" ~ .C_TRAX_SLN,
         TRUE ~ .C_TRAX_DEF
       ),
-      pixel_offset = dplyr::case_when(
-        map_symbol == "1" ~ -2.33,
-        map_symbol == "2" ~ -4.66,
-        map_symbol %in% c("4", "7") ~ 2.33,
-        map_symbol == "8" ~ 4.66,
-        TRUE ~ 0
-      ),
-      meter_offset = pixel_offset * -1 * (156543.03 / (2^zoom))
+      # Zoom-dependent pixel offset from JSON line-offset property
+      pixel_offset = vapply(map_symbol, .trax_offset_px, zoom = zoom, numeric(1L)),
+      # Convert px → m; negate because positive offset = outward from centreline
+      meter_offset = pixel_offset * -1 * .px_to_m(zoom)
     )
   trax <- suppressWarnings(sf::st_cast(trax, "LINESTRING"))
   # Perpendicular shift — replaces the old diagonal c(dx,dx) addition which only
@@ -1005,6 +1015,27 @@ extract_label_coords <- function(sf_obj) {
   approx(c(10,13,14,15),
          .sz(c(9.333,9.333,10.667,10.667)),
          xout=zoom, rule=2)$y
+}
+
+# ── text-max-width word-wrap ───────────────────────────────────────────────────
+# JSON default text-max-width = 10 em for all label layers. This means labels
+# wrap at ~10 × avg_char_width characters. Approximated via strwrap(width=N):
+#   County labels (24px Poller, ls=0.5): ~8 chars → already done
+#   Monument labels (Copperplate/Cinzel, ~14px): ~13 chars
+#   Park/trail labels (Segoe UI/Source3, ~10px): ~16 chars
+#   City labels (Yu Gothic, ~14px): ~12 chars  ← applied at draw time
+# NOTE: text-letter-spacing (JSON em values 0.05–0.75) has NO ggplot2/shadowtext
+#       equivalent. There is no tracking/kerning parameter in geom_shadowtext or
+#       geom_text. These values are documented here and intentionally unimplemented.
+#       Affected layers: StreamsNHDHighRes/label (0.15-0.40), LakesNHDHighRes/label
+#       (0.05-0.30), GSLWaterLevel/label (0.25-0.35), SkiLifts/label (0.20),
+#       WesternStates/label (0.10-0.20), Counties/label (0.50-0.75).
+
+.wrap_labels <- function(labels, width) {
+  vapply(labels, function(x) {
+    if (is.na(x)) return(NA_character_)
+    paste(strwrap(x, width = width), collapse = "\n")
+  }, character(1L))
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1866,6 +1897,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   if (
     nrow(lbl_data$monuments) > 0 && any(!is.na(lbl_data$monuments$map_label))
   ) {
+    lbl_data$monuments$map_label <- .wrap_labels(lbl_data$monuments$map_label, 13L)
     mon_lbl <- extract_label_coords(lbl_data$monuments)
     cls_mon <- suppressWarnings(as.integer(mon_lbl$map_label_class))
     cls_mon[is.na(cls_mon)] <- 2L
@@ -1894,6 +1926,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
 
   # 15e. Park labels — z≥13
   if (nrow(lbl_data$parks) > 0 && any(!is.na(lbl_data$parks$map_label))) {
+    lbl_data$parks$map_label <- .wrap_labels(lbl_data$parks$map_label, 16L)
     park_lbl <- extract_label_coords(lbl_data$parks)
     p <- .lbl(
       p,
@@ -1909,6 +1942,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
 
   # 15f. Golf course labels — z≥13
   if (nrow(lbl_data$golf) > 0 && any(!is.na(lbl_data$golf$map_label))) {
+    lbl_data$golf$map_label <- .wrap_labels(lbl_data$golf$map_label, 16L)
     golf_lbl <- extract_label_coords(lbl_data$golf)
     p <- .lbl(
       p,
@@ -2190,8 +2224,9 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
   }
 
-  # 16. City / town labels
+  # 16. City / town labels — wrap at 12 (10em Yu Gothic Bold)
   if (nrow(city_lbl) > 0 && any(!is.na(city_lbl$map_label))) {
+    city_lbl$map_label <- .wrap_labels(city_lbl$map_label, 12L)
     cls_i <- as.integer(suppressWarnings(median(
       city_lbl$map_label_class,
       na.rm = TRUE
