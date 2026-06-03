@@ -159,10 +159,13 @@ showtext_auto()
   "3" = rgb(179, 134, 149, 51, maxColorValue = 255)
 )
 
-# Buildings — JSON fill #F2F0ED; border = line layer rgba(140,133,133,0.35)
-# (NOT the shadow fill rgba(128,123,121,0.25) which is a separate layer)
-.C_BLDG_FILL <- "#F2F0ED"
-.C_BLDG_BDR <- rgb(140, 133, 133, 89, maxColorValue = 255) # rgba(140,133,133,0.35)
+# Buildings — 3 JSON layers:
+#   shadow: rgba(128,123,121,0.25) fill-translate [1.067,1.067]px (drop shadow)
+#   fill:   #F2F0ED
+#   border: rgba(140,133,133,0.35) line-width 0.267px
+.C_BLDG_SHADOW <- rgb(128, 123, 121,  64, maxColorValue = 255)  # 0.25 alpha
+.C_BLDG_FILL   <- "#F2F0ED"
+.C_BLDG_BDR    <- rgb(140, 133, 133,  89, maxColorValue = 255)  # 0.35 alpha
 
 # Roads
 .C_ROAD_CAS <- "#B3B3B3"
@@ -756,7 +759,8 @@ extract_label_coords <- function(sf_obj) {
       trax_color = dplyr::case_when(
         map_symbol %in% c("0", "1", "2") ~ .C_TRAX_BLU,
         map_symbol %in% c("3", "4") ~ .C_TRAX_GRN,
-        map_symbol == "5" ~ .C_TRAX_GRN5, # distinct shade in JSON
+        # sym 5: JSON uses GRN=rgba(96,191,77) at z14-16 and GRN5=rgba(72,191,48) elsewhere
+        map_symbol == "5" ~ if (zoom >= 14L && zoom < 16L) .C_TRAX_GRN else .C_TRAX_GRN5,
         map_symbol %in% c("6", "7", "8") ~ .C_TRAX_RED,
         map_symbol == "9" ~ .C_TRAX_SLN,
         TRUE ~ .C_TRAX_DEF
@@ -1678,40 +1682,26 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
   }
 
-  # Rail/commuter stops — JSON: invisible icon + text label (minzoom 14)
-  # Rendered as small points; labels come from their map_label field in the label draw section
-  if (nrow(transit$rail_stops) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$rail_stops,
-        shape = 21,
-        size = 1.2,
-        fill = "white",
-        color = alpha("#597EB3", 0.8),
-        stroke = 0.4
-      )
-  }
-  if (nrow(transit$cr_stops) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = transit$cr_stops,
-        shape = 21,
-        size = 1.2,
-        fill = "white",
-        color = alpha("#9B7BBD", 0.8),
-        stroke = 0.4
-      )
-  }
+  # Rail/commuter stops — JSON: icon-color=rgba(0,0,0,0) (invisible) + text label.
+  # No circle markers; station names are rendered in the label section (15v/15w).
+  # (Old code that drew visible circles removed — those were wrong per JSON spec.)
 
-  # 14. Buildings
+  # 14. Buildings — 3 JSON layers: shadow fill + main fill + border line
   if (nrow(buildings) > 0) {
-    p <- p +
-      ggplot2::geom_sf(
-        data = buildings,
-        fill = .C_BLDG_FILL,
-        color = .C_BLDG_BDR,
-        linewidth = .lw(0.267)  # JSON 0.267px
-      )
+    # Layer 1: shadow fill rgba(128,123,121,0.25) with fill-translate [1.067,1.067]px
+    # Approximated by shifting the polygon by 1.067px → meters in EPSG:3857.
+    # In EPSG:3857: positive X = East, positive Y = North; screen translate is (right,down)
+    # so East=+px_to_m, North=-(px_to_m) gives the shadow SE of the building.
+    shadow_off <- 1.067 * .px_to_m(zoom)
+    bldg_shadow <- buildings
+    bldg_shadow$geometry <- sf::st_geometry(buildings) + c(shadow_off, -shadow_off)
+    bldg_shadow$geometry <- sf::st_sfc(bldg_shadow$geometry, crs = sf::st_crs(buildings))
+    p <- p + ggplot2::geom_sf(data = bldg_shadow,
+                fill = .C_BLDG_SHADOW, color = NA)
+    # Layer 2: main fill
+    # Layer 3: border line (drawn together as fill + color)
+    p <- p + ggplot2::geom_sf(data = buildings,
+                fill = .C_BLDG_FILL, color = .C_BLDG_BDR, linewidth = .lw(0.267))
   }
 
   # 14b. POI point markers — rendered as circles/shapes (icons not available in ggplot2)
@@ -2172,6 +2162,23 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       face = "bold.italic",
       fam = .F_STREET
     )
+  }
+
+  # 15v. Light rail station labels — JSON: text-color #8C8989, Segoe UI Semibold Italic
+  #      text-halo rgba(230,226,218,0.55), size 10.667px, z≥14
+  if (nrow(transit$rail_stops) > 0 && any(!is.na(transit$rail_stops$map_label))) {
+    rl_lbl <- extract_label_coords(transit$rail_stops)
+    sz_stn <- .sz(10.667)
+    p <- .lbl(p, rl_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_HE,
+               sz=sz_stn, bgr=.bgr(1.333, sz_stn), face="bold.italic", fam=.F_STREET)
+  }
+
+  # 15w. Commuter rail stop labels — same JSON spec as light rail
+  if (nrow(transit$cr_stops) > 0 && any(!is.na(transit$cr_stops$map_label))) {
+    cr_lbl <- extract_label_coords(transit$cr_stops)
+    sz_stn <- .sz(10.667)
+    p <- .lbl(p, cr_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_HE,
+               sz=sz_stn, bgr=.bgr(1.333, sz_stn), face="bold.italic", fam=.F_STREET)
   }
 
   # 15u. Western States label — line-placed, Helvetica Regular → arimo, z≥8
