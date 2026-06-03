@@ -1480,19 +1480,45 @@ extract_label_coords <- function(sf_obj) {
 
 # Convert any bbox (sf::st_bbox or named numeric xmin/ymin/xmax/ymax) to
 # WGS-84 lon/lat centre coordinates for tile selection.
+# Extract CRS from bbox, falling back to WGS-84 for plain numerics.
+.bbox_crs <- function(bbox) {
+  if (inherits(bbox, "bbox")) sf::st_crs(bbox) else sf::st_crs(4326L)
+}
+
+# Reprojects any bbox (sf::st_bbox or named numeric xmin/ymin/xmax/ymax) to
+# target_crs and returns a proper sf::st_bbox with the new CRS.
+.bbox_in_crs <- function(bbox, target_crs) {
+  src <- .bbox_crs(bbox)
+  tgt <- sf::st_crs(target_crs)
+  bb  <- sf::st_bbox(
+    c(xmin = bbox[["xmin"]], ymin = bbox[["ymin"]],
+      xmax = bbox[["xmax"]], ymax = bbox[["ymax"]]),
+    crs = src
+  )
+  if (identical(src, tgt)) return(bb)
+  sf::st_bbox(sf::st_transform(sf::st_as_sfc(bb), tgt))
+}
+
+# Returns WGS-84 lon/lat centre of any bbox. Uses identical() for CRS
+# comparison — $epsg is unreliable on PROJ 6+ (returns NA for WKT2-stored CRS).
 .bbox_centre_wgs84 <- function(bbox) {
+  src <- .bbox_crs(bbox)
   cx  <- (bbox[["xmin"]] + bbox[["xmax"]]) / 2
   cy  <- (bbox[["ymin"]] + bbox[["ymax"]]) / 2
-  crs <- if (inherits(bbox, "bbox")) sf::st_crs(bbox) else sf::st_crs(4326L)
-  if (!is.na(crs$epsg) && !isTRUE(crs$epsg == 4326L)) {
-    pt <- sf::st_transform(sf::st_sfc(sf::st_point(c(cx, cy)), crs = crs), 4326L)
+  if (!is.na(src) && !identical(src, sf::st_crs(4326L))) {
+    pt <- sf::st_transform(sf::st_sfc(sf::st_point(c(cx, cy)), crs = src), 4326L)
     co <- sf::st_coordinates(pt)
     return(list(lon = co[[1L]], lat = co[[2L]]))
   }
   list(lon = cx, lat = cy)
 }
 
-build_ugrc_map <- function(bbox, zoom, verbose = FALSE) {
+# Build a complete, self-contained UGRC basemap ggplot for a given bbox and zoom.
+# bbox       : sf::st_bbox or named numeric (xmin/ymin/xmax/ymax) in any CRS.
+# zoom       : integer tile zoom level (12-16 recommended for tract maps).
+# crs        : display CRS as EPSG integer or sf::st_crs object (default 3857).
+# verbose    : print per-layer row counts for diagnostics.
+build_ugrc_map <- function(bbox, zoom, crs = 3857L, verbose = FALSE) {
   .v <- function(...) if (verbose) message(...) # diagnostic helper
 
   # — Derive tile centre from bbox —
@@ -1652,12 +1678,11 @@ build_ugrc_map <- function(bbox, zoom, verbose = FALSE) {
   ))
   str_lbl <- extract_label_coords(.filter_street_labels(lbl_data$street, zoom))
 
-  # Bounding box
-  bb <- sf::st_bbox(counties)
-  xm <- (bb["xmax"] - bb["xmin"]) * 0.015
-  ym <- (bb["ymax"] - bb["ymin"]) * 0.015
-  xlim <- c(bb["xmin"] + xm, bb["xmax"] - xm)
-  ylim <- c(bb["ymin"] + ym, bb["ymax"] - ym)
+  # Display extent — project input bbox to the requested display CRS.
+  # Using the caller-supplied bbox (not the tile's county extent) ensures the
+  # returned ggplot renders exactly the area requested, which is required for
+  # correct alignment when the plot is rasterized as a background grob.
+  bbox_disp <- .bbox_in_crs(bbox, crs)
 
   # ─ Draw stack ─────────────────────────────────────────────────────────────
   p <- ggplot2::ggplot()
@@ -3067,7 +3092,12 @@ build_ugrc_map <- function(bbox, zoom, verbose = FALSE) {
 
   # ─ Coordinate system & theme ─────────────────────────────────────────────
   p +
-    ggplot2::coord_sf(xlim = xlim, ylim = ylim, expand = FALSE, crs = 3857) +
+    ggplot2::coord_sf(
+      xlim   = c(bbox_disp[["xmin"]], bbox_disp[["xmax"]]),
+      ylim   = c(bbox_disp[["ymin"]], bbox_disp[["ymax"]]),
+      crs    = sf::st_crs(crs),
+      expand = FALSE
+    ) +
     ggplot2::theme_void() +
     ggplot2::theme(
       panel.background = ggplot2::element_rect(fill = .C_CTY_FILL, color = NA)
