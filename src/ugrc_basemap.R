@@ -488,26 +488,15 @@ get_tile_xyz <- function(lon, lat, zoom) {
   )
 }
 
-# ESRI ArcGIS vector tile server delivers EPSG:3857 data with non-standard axis
-# order: first axis = Southing (south direction), second = Westing (west).
-# We declare this as a proper WKT2 CRS so PROJ can compute the correct
-# transformation to canonical EPSG:3857 (Easting, Northing) via st_transform.
-.ESRI_MVT_CRS <- sf::st_crs('
-PROJCRS["WGS 84 / Pseudo-Mercator (Southing, Westing)",
-  BASEGEOGCRS["WGS 84",
-    DATUM["World Geodetic System 1984",
-      ELLIPSOID["WGS 84",6378137,298.257223563,LENGTHUNIT["metre",1]]],
-    PRIMEM["Greenwich",0,ANGLEUNIT["degree",0.0174532925199433]]],
-  CONVERSION["Popular Visualisation Pseudo Mercator",
-    METHOD["Popular Visualisation Pseudo Mercator"],
-    PARAMETER["Latitude of natural origin",0,ANGLEUNIT["degree",0.0174532925199433]],
-    PARAMETER["Longitude of natural origin",0,ANGLEUNIT["degree",0.0174532925199433]],
-    PARAMETER["False easting",0,LENGTHUNIT["metre",1]],
-    PARAMETER["False northing",0,LENGTHUNIT["metre",1]]],
-  CS[Cartesian,2],
-  AXIS["southing",south,ORDER[1],LENGTHUNIT["metre",1]],
-  AXIS["westing",west,ORDER[2],LENGTHUNIT["metre",1]]]
-')
+# Affine matrix for ESRI MVT axis correction: (x,y) → (−y,−x).
+# ESRI ArcGIS vector tile server returns EPSG:3857 with stored convention
+# (x=−northing, y=−easting). This 2×2 matrix swaps and negates both axes,
+# equivalent to what PROJ would do for a Southing/Westing → Easting/Northing
+# axis transformation. PROJ-based approaches (pipeline= or WKT2 CRS relabelling)
+# either fail silently or produce warnings because PROJ treats EPSG:3857→EPSG:3857
+# as an identity and skips the pipeline. sf's sfc*matrix applies the operation
+# directly to the coordinates without CRS-matching overhead.
+.ESRI_MVT_AXIS_FIX <- matrix(c(0L, -1L, -1L, 0L), 2L, 2L)
 
 safe_read_mvt <- function(url, layer_name) {
   avail <- tryCatch(sf::st_layers(url)$name, error = function(e) character(0))
@@ -560,15 +549,12 @@ safe_read_mvt <- function(url, layer_name) {
   }
   lyr$map_symbol <- if (length(sy) > 0) as.character(lyr[[sy[1]]]) else "0"
 
-  # ESRI ArcGIS MVT tiles return EPSG:3857 data with Southing/Westing axes.
-  # Declare the actual source CRS (.ESRI_MVT_CRS), then st_transform to canonical
-  # EPSG:3857 (Easting, Northing). PROJ computes the transformation correctly from
-  # the axis metadata — no custom pipeline or manual coordinate manipulation needed.
+  # ESRI ArcGIS MVT tiles return EPSG:3857 with (−northing, −easting) axis order.
+  # Correct via sf affine transform — the same operation PROJ would apply for a
+  # Southing/Westing → Easting/Northing axis transformation, applied directly.
   if (isTRUE(sf::st_crs(lyr)$epsg == 3857L)) {
-    lyr <- sf::st_transform(
-      sf::st_set_crs(lyr, .ESRI_MVT_CRS),
-      sf::st_crs(3857L)
-    )
+    corrected <- sf::st_geometry(lyr) * .ESRI_MVT_AXIS_FIX
+    lyr <- sf::st_set_geometry(lyr, sf::st_set_crs(corrected, sf::st_crs(3857L)))
   }
 
   lyr
