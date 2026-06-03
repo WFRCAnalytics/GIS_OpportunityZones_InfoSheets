@@ -1014,10 +1014,11 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
     ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
     ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
     ggplot2::coord_sf(
-      xlim   = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
-      ylim   = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
-      crs    = map_crs_sf,
-      expand = FALSE
+      xlim        = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
+      ylim        = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
+      crs         = map_crs_sf,
+      default_crs = map_crs_sf,  # xlim/ylim are in map_crs units (metres), not WGS84 degrees
+      expand      = FALSE
     ) +
     ggplot2::theme_void() +
     ggplot2::theme(

@@ -244,7 +244,9 @@ cat(sprintf("xlim=[%.0f, %.0f]  ylim=[%.0f, %.0f]\n",
 p_g <- bm + ggplot2::coord_sf(
   xlim = c(TRACT_BBOX[["xmin"]], TRACT_BBOX[["xmax"]]),
   ylim = c(TRACT_BBOX[["ymin"]], TRACT_BBOX[["ymax"]]),
-  crs  = sf::st_crs(3857L), expand = FALSE
+  crs         = sf::st_crs(3857L),
+  default_crs = sf::st_crs(3857L),  # xlim/ylim are in 3857 metres, not WGS84 degrees
+  expand      = FALSE
 )
 print(p_g)
 # PASS: basemap cropped to tract extent
@@ -256,7 +258,9 @@ p_h <- bm +
   ggplot2::coord_sf(
     xlim = c(TRACT_BBOX[["xmin"]], TRACT_BBOX[["xmax"]]),
     ylim = c(TRACT_BBOX[["ymin"]], TRACT_BBOX[["ymax"]]),
-    crs  = sf::st_crs(3857L), expand = FALSE
+    crs         = sf::st_crs(3857L),
+  default_crs = sf::st_crs(3857L),  # xlim/ylim are in 3857 metres, not WGS84 degrees
+  expand      = FALSE
   )
 print(p_h)
 # PASS: basemap + red tract outline
