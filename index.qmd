@@ -26,7 +26,6 @@ library(stringr)
 
 # Mapping and output
 library(ggplot2)
-library(tidyterra)
 library(knitr)
 
 # Report assembly
@@ -907,113 +906,13 @@ wc_center_colors <- c(
   "Special District" = "#d3d3d3"
 )
 
-# Basemap tile cache — one GeoTIFF per tract per zoom level.
-# On first run tiles are fetched from UGRC WMTS and written to disk.
-# On subsequent runs the TIFs are read directly; no network request is made.
-.bm_dir <- "data/basemap_cache"
-dir.create(.bm_dir, showWarnings = FALSE, recursive = TRUE)
-
-# Check whether all OZ tracts already have a cached basemap TIF.
-# Zoom is baked into the filename (bm_<GEOID>_z<zoom>.tif); any zoom hit counts.
-.bm_cached <- unique(sub(
-  "^bm_(.+)_z[0-9]+\\.tif$",
-  "\\1",
-  list.files(.bm_dir, pattern = "^bm_.+\\.tif$")
-))
-.bm_all_cached <- length(.bm_cached) > 0L &&
-  all(oz_tracts$GEOID %in% .bm_cached)
-
-if (.bm_all_cached) {
-  message(
-    "Basemap cache: all ",
-    length(.bm_cached),
-    " tracts cached",
-    " — skipping WMTS connection.\n",
-    "  To regenerate: unlink(\"",
-    .bm_dir,
-    "\", recursive = TRUE)",
-    " then re-run this chunk."
-  )
-  .wmts_rasts <- purrr::set_names(vector("list", 5L), as.character(12:16))
-  .wmts_epsg <- 3857L
-} else {
-  .n_miss <- sum(!oz_tracts$GEOID %in% .bm_cached)
-  message(
-    "Basemap cache: ",
-    length(.bm_cached),
-    " / ",
-    nrow(oz_tracts),
-    " tracts cached — fetching ",
-    .n_miss,
-    " missing tile(s) via WMTS."
-  )
-  # Open one connection per zoom level; terra::rast() only reads the capabilities
-  # XML here — actual tile data is fetched lazily by terra::crop() per tract.
-  .wmts_base <- paste0(
-    "WMTS:https://discover.agrc.utah.gov/login/path/",
-    "slogan-emerald-slalom-nevada/wmts/1.0.0/WMTSCapabilities.xml",
-    ",layer=lite_basemap,tilematrixset=0to19,zoom_level="
-  )
-  .wmts_rasts <- purrr::set_names(
-    purrr::map(12:16, function(z) {
-      tryCatch(
-        terra::rast(paste0(.wmts_base, z)),
-        error = function(e) {
-          message("WMTS zoom ", z, " open failed: ", e$message)
-          NULL
-        }
-      )
-    }),
-    as.character(12:16)
-  )
-  .wmts_epsg <- local({
-    r <- purrr::detect(.wmts_rasts, Negate(is.null))
-    if (!is.null(r) && grepl("3857", terra::crs(r))) 3857L else 4326L
-  })
-}
-
-.fetch_basemap <- function(exp_bb, crs_epsg, zoom) {
-  rconn <- .wmts_rasts[[as.character(zoom)]]
-  if (is.null(rconn)) {
-    return(NULL)
-  }
-  tryCatch(
-    {
-      bbox_w <- sf::st_bbox(
-        sf::st_transform(
-          sf::st_set_crs(sf::st_as_sfc(exp_bb), crs_epsg),
-          .wmts_epsg
-        )
-      )
-      r_crop <- terra::crop(
-        rconn,
-        terra::ext(
-          bbox_w["xmin"],
-          bbox_w["xmax"],
-          bbox_w["ymin"],
-          bbox_w["ymax"]
-        )
-      )
-      if (terra::nlyr(r_crop) > 3L) {
-        r_crop <- r_crop[[1:3]]
-      }
-      terra::project(
-        r_crop,
-        paste0("EPSG:", crs_epsg),
-        res = (exp_bb["xmax"] - exp_bb["xmin"]) / 1200
-      )
-    },
-    error = function(e) {
-      message("Basemap crop failed (zoom ", zoom, "): ", e$message)
-      NULL
-    }
-  )
-}
+source("src/ugrc_basemap.R")
+ugrc_map_init()
 
 make_tract_map <- function(geoid) {
-  focal <- dplyr::filter(oz_tracts, GEOID == geoid)
+  focal    <- dplyr::filter(oz_tracts, GEOID == geoid)
   other_oz <- dplyr::filter(oz_tracts, GEOID != geoid)
-  exp_bb <- .enforce_aspect(
+  exp_bb   <- .enforce_aspect(
     .expand_bbox(sf::st_bbox(focal), factor = 1.2),
     map_width_in,
     map_height_in
@@ -1023,41 +922,21 @@ make_tract_map <- function(geoid) {
   # Target ~4 tiles across the view width; clamp to [12, 16]
   view_w_m <- exp_bb["xmax"] - exp_bb["xmin"]
   view_ctr <- sf::st_coordinates(sf::st_transform(sf::st_centroid(view), 4326))
-  lat_rad <- view_ctr[1L, "Y"] * pi / 180
-  zoom <- max(
-    12L,
-    min(
-      16L,
-      as.integer(
-        round(log2(40075016.686 * cos(lat_rad) / view_w_m * 8)) - 3L
-      )
-    )
-  )
+  lat_rad  <- view_ctr[1L, "Y"] * pi / 180
+  zoom <- max(12L, min(16L, as.integer(
+    round(log2(40075016.686 * cos(lat_rad) / view_w_m * 8)) - 3L
+  )))
 
-  bm_path <- file.path(.bm_dir, paste0("bm_", geoid, "_z", zoom, ".tif"))
-  basemap <- if (file.exists(bm_path)) {
-    terra::rast(bm_path)
-  } else {
-    bm <- .fetch_basemap(exp_bb, crs, zoom)
-    if (!is.null(bm)) {
-      terra::writeRaster(bm, bm_path, overwrite = TRUE)
-    }
-    bm
-  }
+  # 1. Vector tile basemap — exp_bb is in crs (EPSG:26912); .bbox_centre_wgs84
+  #    reprojects it to WGS-84 for tile selection.
+  p <- build_ugrc_map(exp_bb, zoom)
 
-  # Dissolve all SAP buffers in view into a single outline — removes internal seams
-  sap_view <- sf::st_filter(sap_buffers, view)
-  sap_dissolved <- if (nrow(sap_view) > 0) sf::st_union(sap_view) else sap_view
-
-  p <- ggplot2::ggplot()
-
-  # 1. Basemap tiles (UGRC basemap-lite)
-  if (!is.null(basemap)) {
-    p <- p + tidyterra::geom_spatraster_rgb(data = basemap)
-  }
+  # Dissolve SAP buffers in view — removes internal seams between adjacent buffers
+  sap_view      <- sf::st_filter(sap_buffers, view)
+  sap_dissolved <- if (nrow(sap_view) > 0L) sf::st_union(sap_view) else sap_view
 
   p +
-    # 2. Wasatch Choice centers — sole fill layer at 0.8 opacity
+    # 2. Wasatch Choice centers — sole fill layer at 0.6 opacity
     ggplot2::geom_sf(
       data = sf::st_filter(wc_centers, view),
       ggplot2::aes(fill = CenterType),
@@ -1070,14 +949,14 @@ make_tract_map <- function(geoid) {
       na.value = "#C8C0C0",
       drop = TRUE
     ) +
-    # 3. Other OZ 2.0 tracts — thin amber outline, no fill; basemap reads through
+    # 3. Other OZ 2.0 tracts — thin amber outline, basemap reads through
     ggplot2::geom_sf(
       data = sf::st_filter(other_oz, view),
       fill = NA,
       color = "#C4A43A",
       linewidth = 0.3
     ) +
-    # 4. SAP buffers dissolved — prominent dashed outline marks transit influence area
+    # 4. SAP buffers dissolved — dashed outline marks transit influence area
     ggplot2::geom_sf(
       data = sap_dissolved,
       fill = NA,
@@ -1085,49 +964,35 @@ make_tract_map <- function(geoid) {
       linewidth = 0.65,
       linetype = "dashed"
     ) +
-    # 5. Focal tract — white halo first so the border reads cleanly over any basemap fill,
-    #    then WFRC primary teal outline at full weight
-    ggplot2::geom_sf(
-      data = focal,
-      fill = NA,
-      color = "white",
-      linewidth = 2.8
-    ) +
-    ggplot2::geom_sf(
-      data = focal,
-      fill = NA,
-      color = "#003b4f",
-      linewidth = 1.6
-    ) +
-    # 6. Freeway interchanges — above tract boundary so points are never clipped
+    # 5. Focal tract — white halo then WFRC teal so border reads over basemap
+    ggplot2::geom_sf(data = focal, fill = NA, color = "white",   linewidth = 2.8) +
+    ggplot2::geom_sf(data = focal, fill = NA, color = "#003b4f", linewidth = 1.6) +
+    # 6. Freeway interchanges
     ggplot2::geom_sf(
       data = sf::st_filter(freeway_exits, view),
-      shape = 17,
-      color = "#3A4A5A",
-      size = 5.0
+      shape = 17, color = "#3A4A5A", size = 5.0
     ) +
     # 7. UTA Rail / BRT stops — topmost point layer
     ggplot2::geom_sf(
       data = sf::st_filter(uta_stops, view),
-      shape = 21,
-      fill = "#943030",
-      color = "white",
-      size = 5,
-      stroke = 0.4
+      shape = 21, fill = "#943030", color = "white", size = 5, stroke = 0.4
     ) +
+    # Override coord_sf to the tract view extent in the analysis CRS (EPSG:26912).
+    # build_ugrc_map sets coord_sf in EPSG:3857; this replaces it so all OZ layers
+    # (already in 26912) and the basemap layers (reprojected from 3857) align correctly.
     ggplot2::coord_sf(
-      xlim = c(exp_bb["xmin"], exp_bb["xmax"]),
-      ylim = c(exp_bb["ymin"], exp_bb["ymax"]),
-      crs = sf::st_crs(crs),
+      xlim        = c(exp_bb["xmin"], exp_bb["xmax"]),
+      ylim        = c(exp_bb["ymin"], exp_bb["ymax"]),
+      crs         = sf::st_crs(crs),
       default_crs = sf::st_crs(crs),
-      datum = sf::st_crs(crs),
-      expand = FALSE
+      datum       = sf::st_crs(crs),
+      expand      = FALSE
     ) +
     ggplot2::theme_void() +
     ggplot2::theme(
-      legend.position = "none",
-      plot.background = ggplot2::element_rect(fill = "white", color = NA),
-      plot.margin = ggplot2::margin(0, 0, 0, 0)
+      legend.position  = "none",
+      plot.background  = ggplot2::element_rect(fill = "white", color = NA),
+      plot.margin      = ggplot2::margin(0, 0, 0, 0)
     )
 }
 ```

@@ -28,12 +28,12 @@
 
 # Call once per session before build_ugrc_map() to register Google Fonts.
 ugrc_map_init <- function() {
-  showtext::font_add_google("Poller One",    "poller")
-  showtext::font_add_google("Noto Sans JP",  "noto_jp")
-  showtext::font_add_google("Arimo",         "arimo")
-  showtext::font_add_google("Source Sans 3", "source3")
-  showtext::font_add_google("Bitter",        "bitter")
-  showtext::font_add_google("Cinzel",        "cinzel")
+  sysfonts::font_add_google("Poller One",    "poller")
+  sysfonts::font_add_google("Noto Sans JP",  "noto_jp")
+  sysfonts::font_add_google("Arimo",         "arimo")
+  sysfonts::font_add_google("Source Sans 3", "source3")
+  sysfonts::font_add_google("Bitter",        "bitter")
+  sysfonts::font_add_google("Cinzel",        "cinzel")
   showtext::showtext_auto()
 }
 
