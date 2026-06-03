@@ -539,13 +539,12 @@ safe_read_mvt <- function(url, layer_name) {
   }
   lyr$map_symbol <- if (length(sy) > 0) as.character(lyr[[sy[1]]]) else "0"
 
-  # GDAL's MVT driver returns features in OGC:CRS84 (EPSG:4326, lon/lat degrees).
-  # All style constants, linewidths, and pixel-to-metre conversions in this file
-  # assume EPSG:3857 (Web Mercator).  Normalise here once so every caller gets
-  # consistent 3857 geometry and coord_sf(crs=3857, xlim=metres) works correctly.
-  if (!is.na(sf::st_crs(lyr)) && !identical(sf::st_crs(lyr), sf::st_crs(3857L))) {
-    lyr <- sf::st_transform(lyr, 3857L)
-  }
+  # Do NOT transform here.  GDAL's MVT driver returns OGC:CRS84 (lon/lat degrees)
+  # but the PROJ axis-order rules for EPSG:4326 vs CRS84 cause st_transform(→3857)
+  # to flip coordinates to the wrong hemisphere.  Layers are kept in their native
+  # CRS (4326/CRS84).  build_ugrc_map clips them to bbox_disp using a 4326 bbox,
+  # and coord_sf(crs=3857, default_crs=4326) reprojects sf layers for display and
+  # places non-sf label x/y (in degrees) at their correct lon/lat positions.
 
   lyr
 }
@@ -1687,26 +1686,10 @@ build_ugrc_map <- function(bbox, zoom, crs = 3857L, verbose = FALSE) {
   str_lbl <- extract_label_coords(.filter_street_labels(lbl_data$street, zoom))
 
   # Display extent — project input bbox to the requested display CRS.
-  bbox_disp <- .bbox_in_crs(bbox, crs)
-
-  # Pre-clip all tile data to bbox_disp so the ggplot auto-detects the correct
-  # extent without needing xlim/ylim in coord_sf.  Avoids ggplot2's default_crs
-  # / xlim-unit ambiguity that causes blank maps when clip limits are in metres.
-  .clip <- function(x) {
-    if (!inherits(x, "sf") || nrow(x) == 0L) return(x)
-    tryCatch(sf::st_crop(x, bbox_disp), error = function(e) x)
-  }
-  .clip_list <- function(lst) lapply(lst, .clip)
-
-  ground    <- .clip_list(ground)
-  water     <- .clip_list(water)
-  rec       <- .clip_list(rec)
-  roads_raw <- .clip_list(roads_raw)
-  transit   <- .clip_list(transit)
-  poi       <- .clip_list(poi)
-  buildings <- .clip(buildings)
-  hillshade <- .clip(hillshade)
-  lbl_data  <- .clip_list(lbl_data)
+  # bbox_disp is used only for computing xlim/ylim in the caller's coord_sf.
+  # Layers are left in their native CRS (4326 from GDAL's MVT driver);
+  # coord_sf(crs=..., default_crs=4326) reprojects them at render time.
+  bbox_disp <- .bbox_in_crs(bbox, sf::st_crs(4326L))
 
   # ─ Draw stack ─────────────────────────────────────────────────────────────
   p <- ggplot2::ggplot()

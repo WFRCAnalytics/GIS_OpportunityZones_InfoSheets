@@ -971,10 +971,12 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
   sap_all    <- sf::st_transform(sap_buffers,   map_crs_sf)
 
   # 2. Bbox + zoom from focal tract
-  geo      <- .tract_bbox_zoom(geoid, map_crs)
-  exp_bbox <- geo$bbox        # sf::st_bbox in map_crs
-  zoom     <- geo$zoom
-  view     <- sf::st_as_sfc(exp_bbox)
+  geo          <- .tract_bbox_zoom(geoid, map_crs)
+  exp_bbox     <- geo$bbox        # sf::st_bbox in map_crs (metres)
+  zoom         <- geo$zoom
+  view         <- sf::st_as_sfc(exp_bbox)
+  # WGS84 bbox for coord_sf xlim/ylim — default_crs=4326 means limits in degrees
+  exp_bbox_wgs <- sf::st_bbox(sf::st_transform(view, sf::st_crs(4326L)))
   message(sprintf("[make_tract_map] zoom=%d  bbox xmin=%.0f ymin=%.0f xmax=%.0f ymax=%.0f",
                   zoom, exp_bbox[["xmin"]], exp_bbox[["ymin"]],
                   exp_bbox[["xmax"]], exp_bbox[["ymax"]]))
@@ -1013,10 +1015,17 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
     ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
     ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
     ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
-    # No xlim/ylim: build_ugrc_map pre-clips all tile data to exp_bbox, so
-    # ggplot2 auto-detects the correct display extent from the layer data.
-    # This avoids the default_crs / unit ambiguity that caused blank maps.
-    ggplot2::coord_sf(crs = map_crs_sf, expand = FALSE) +
+    # coord_sf reprojects all layers (native 4326 from MVT + OZ layers in map_crs)
+    # to map_crs for display.  xlim/ylim in WGS84 degrees (default_crs=4326) so
+    # ggplot2 correctly interprets them AND places shadowtext label x/y (which are
+    # in 4326 degrees from extract_label_coords) at the right positions.
+    ggplot2::coord_sf(
+      crs         = map_crs_sf,
+      default_crs = sf::st_crs(4326L),
+      xlim        = c(exp_bbox_wgs[["xmin"]], exp_bbox_wgs[["xmax"]]),
+      ylim        = c(exp_bbox_wgs[["ymin"]], exp_bbox_wgs[["ymax"]]),
+      expand      = FALSE
+    ) +
     ggplot2::theme_void() +
     ggplot2::theme(
       legend.position = "none",
