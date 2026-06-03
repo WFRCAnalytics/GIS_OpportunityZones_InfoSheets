@@ -645,6 +645,34 @@ extract_label_coords <- function(sf_obj) {
 # 7. POST-FETCH PROCESSING
 # ══════════════════════════════════════════════════════════════════════════════
 
+# ── Phase 5 helpers: line-offset approximation ────────────────────────────────
+
+# Convert CSS pixels to EPSG:3857 map units (meters) at a given zoom level.
+# Used to translate JSON line-offset values into st_buffer() distances.
+.px_to_m <- function(zoom) 156543.03 / (2^zoom)
+
+# Buffer an sf polygon outward by offset_px CSS pixels at the given zoom.
+# Simulates Mapbox GL line-offset on polygon boundary layers.
+.buf_sf <- function(sf_obj, offset_px, zoom) {
+  d <- offset_px * .px_to_m(zoom)
+  tryCatch(sf::st_buffer(sf_obj, dist = d), error = function(e) sf_obj)
+}
+
+# Shift a LINESTRING geometry perpendicular to its direction by offset_m meters.
+# Replaces the incorrect diagonal shift (geometry + c(dx, dx)) used previously.
+# Direction is approximated from the first→last coordinate pair of each segment.
+.shift_perpendicular <- function(line_geom, offset_m) {
+  coords <- sf::st_coordinates(line_geom)
+  n <- nrow(coords)
+  if (n < 2L) return(line_geom + c(offset_m, 0))
+  dx  <- coords[n, 1L] - coords[1L, 1L]
+  dy  <- coords[n, 2L] - coords[1L, 2L]
+  len <- sqrt(dx^2 + dy^2)
+  if (len < 1e-9) return(line_geom + c(offset_m, 0))
+  # Rotate direction 90° CCW: perpendicular unit vector (-dy/len, dx/len)
+  line_geom + c(-dy / len * offset_m, dx / len * offset_m)
+}
+
 .prepare_trax <- function(trax, zoom) {
   if (nrow(trax) == 0) {
     return(trax)
@@ -669,8 +697,10 @@ extract_label_coords <- function(sf_obj) {
       meter_offset = pixel_offset * -1 * (156543.03 / (2^zoom))
     )
   trax <- suppressWarnings(sf::st_cast(trax, "LINESTRING"))
+  # Perpendicular shift — replaces the old diagonal c(dx,dx) addition which only
+  # works correctly for exactly 45° lines.
   shifted <- lapply(seq_len(nrow(trax)), function(i) {
-    trax$geometry[[i]] + c(trax$meter_offset[i], trax$meter_offset[i])
+    .shift_perpendicular(trax$geometry[[i]], trax$meter_offset[i])
   })
   trax$geometry <- sf::st_sfc(shifted, crs = sf::st_crs(trax))
   trax
@@ -1295,121 +1325,40 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
-  # National Monuments (sym 0) — 3-stroke at z13+, 2-stroke z10-13, 1-stroke z8-10
-    if (nrow(mon_natl) > 0) {
+  # National Monuments (sym 0) — .buf_sf() approximates JSON line-offset.
+  # Buffering the polygon outward by offset_px CSS pixels, then drawing its
+  # border, replicates the visual halo that line-offset creates in Mapbox GL.
+  if (nrow(mon_natl) > 0) {
     if (zoom >= 13) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_OUTER,
-          linewidth = .lw(8.0)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_MID,
-          linewidth = .lw(4.0)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = .lw(0.667)
-        )
+      # z13+: outer offset=4px, mid offset=1.333px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_natl,4.0,zoom),   fill=NA, color=.C_NM_OUTER, linewidth=.lw(8.0))
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_natl,1.333,zoom), fill=NA, color=.C_NM_MID,   linewidth=.lw(4.0))
+      p <- p + ggplot2::geom_sf(data=mon_natl,                     fill=NA, color=.C_NM_INNER, linewidth=.lw(0.667))
     } else if (zoom >= 10) {
-      # z10-13: outer 5.33→0.80, inner 0.67→0.10
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = "#C7C0BD",
-          linewidth = .lw(5.333)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = .lw(0.667)
-        )
+      # z10-13: outer offset=2.667px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_natl,2.667,zoom), fill=NA, color="#C7C0BD",   linewidth=.lw(5.333))
+      p <- p + ggplot2::geom_sf(data=mon_natl,                     fill=NA, color=.C_NM_INNER, linewidth=.lw(0.667))
     } else {
-      # z8-10: outer 3.33→0.50
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = "#CCC5C2",
-          linewidth = .lw(3.333)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_natl,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = .lw(0.667)
-        )
+      # z8-10: outer offset=1.667px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_natl,1.667,zoom), fill=NA, color="#CCC5C2",   linewidth=.lw(3.333))
+      p <- p + ggplot2::geom_sf(data=mon_natl,                     fill=NA, color=.C_NM_INNER, linewidth=.lw(0.667))
     }
   }
-  # State Parks (sym 1) — 3-stroke at z13+, 2-stroke z8-13
-  # JSON px: outer 8→1.20, mid 2.67→0.40, inner 1.0→0.15 at z13+
+  # State Parks (sym 1) — same st_buffer() strategy
   if (nrow(mon_sp) > 0) {
     if (zoom >= 13) {
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_OUTER,
-          linewidth = .lw(8.0)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_MID,
-          linewidth = .lw(2.667)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_BDR,
-          linewidth = .lw(1.0)
-        )
+      # z13+: outer offset=4px, mid offset=1.333px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_sp,4.0,zoom),   fill=NA, color=.C_SP_OUTER, linewidth=.lw(8.0))
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_sp,1.333,zoom), fill=NA, color=.C_SP_MID,   linewidth=.lw(2.667))
+      p <- p + ggplot2::geom_sf(data=mon_sp,                     fill=NA, color=.C_SP_BDR,   linewidth=.lw(1.0))
     } else if (zoom >= 11) {
-      # z11-13: outer 4→0.60, inner 0.67→0.10 (inner = #999391)
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_MID,
-          linewidth = .lw(4.0)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_NM_INNER,
-          linewidth = .lw(0.667)
-        )
+      # z11-13: outer offset=2px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_sp,2.0,zoom), fill=NA, color=.C_SP_MID,   linewidth=.lw(4.0))
+      p <- p + ggplot2::geom_sf(data=mon_sp,                   fill=NA, color=.C_NM_INNER, linewidth=.lw(0.667))
     } else {
-      # z8-11: outer 3.33→0.50, inner 0.67→0.10 (inner = #8C867E per JSON)
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_MID,
-          linewidth = .lw(3.333)
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = mon_sp,
-          fill = NA,
-          color = .C_SP_INNER,
-          linewidth = .lw(0.667)
-        )
+      # z8-11: outer offset=1.667px, inner on boundary
+      p <- p + ggplot2::geom_sf(data=.buf_sf(mon_sp,1.667,zoom), fill=NA, color=.C_SP_MID,   linewidth=.lw(3.333))
+      p <- p + ggplot2::geom_sf(data=mon_sp,                     fill=NA, color=.C_SP_INNER, linewidth=.lw(0.667))
     }
   }
   if (nrow(rec$ski) > 0) {
@@ -1465,40 +1414,26 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     }
   }
 
-  # 7. Municipalities Carto:2 (type-coded fills + two-stroke borders)
-  # sym 0 outer stroke: z<15 = rgba(160,134,179,0.15), z15+ = rgba(144,120,161,0.15)
-  .m2_out0 <- if (zoom >= 15) {
-    .C_M2_OUT[["0"]]
-  } else {
-    rgb(160, 134, 179, 38, maxColorValue = 255)
-  } # rgba(160,134,179,0.15)
+  # 7. Municipalities Carto:2 — .buf_sf() approximates JSON line-offset halos.
+  # JSON uses offset strokes (outer 2.333-3.333px, inner 1.333px outward).
+  # Buffering the polygon by the offset then drawing its border replicates this.
+  # sym 0 outer colour changes at z15 (slightly different purple shade in JSON).
+  .m2_out0 <- if (zoom >= 15) .C_M2_OUT[["0"]]
+              else rgb(160, 134, 179, 38, maxColorValue=255)  # rgba(160,134,179,0.15)
+  outer_off_px <- if (zoom >= 13) 3.333 else 2.333   # JSON z12-13=2.333, z13+=3.333
+  inner_off_px <- 1.333                               # constant across all zooms
   if (nrow(muni$muni2) > 0) {
     for (sv in c("0", "1", "2", "3")) {
-      msf <- muni$muni2[
-        !is.na(muni$muni2$map_symbol) & muni$muni2$map_symbol == sv,
-      ]
-      if (nrow(msf) == 0) {
-        next
-      }
+      msf <- muni$muni2[!is.na(muni$muni2$map_symbol) & muni$muni2$map_symbol == sv, ]
+      if (nrow(msf) == 0) next
       out_col <- if (sv == "0") .m2_out0 else .C_M2_OUT[[sv]]
-      p <- p + ggplot2::geom_sf(data = msf, fill = .C_M2_FILL, color = NA)
-      p <- p +
-        ggplot2::geom_sf(
-          data = msf,
-          fill = NA,
-          color = out_col,
-          linewidth = m2_ow
-        )
-      p <- p +
-        ggplot2::geom_sf(
-          data = msf,
-          fill = NA,
-          color = .C_M2_IN[[sv]],
-          linewidth = m2_iw
-        )
+      msf_outer <- .buf_sf(msf, outer_off_px, zoom)
+      msf_inner <- .buf_sf(msf, inner_off_px, zoom)
+      p <- p + ggplot2::geom_sf(data=msf,       fill=.C_M2_FILL, color=NA)
+      p <- p + ggplot2::geom_sf(data=msf_outer, fill=NA, color=out_col,        linewidth=m2_ow)
+      p <- p + ggplot2::geom_sf(data=msf_inner, fill=NA, color=.C_M2_IN[[sv]], linewidth=m2_iw)
     }
   }
-
   # 8. Municipalities Carto:1
   if (nrow(muni$muni1) > 0) {
     p <- p +
