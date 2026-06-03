@@ -182,8 +182,36 @@ showtext_auto()
 .C_PARK_HALO <- rgb(235, 235, 220, 128, maxColorValue = 255) # warm-gray halo
 .C_MON_LBL <- "#807E7D" # monuments, state parks
 .C_MON_HALO <- rgb(230, 228, 225, 128, maxColorValue = 255) # same as city halo
-.C_SKI_LBL <- "#7A9098" # ski area labels
-.C_SKI_HALO <- rgb(230, 235, 237, 128, maxColorValue = 255)
+.C_SKI_LBL  <- "#8C8989"                                      # SkiAreaLocations label (JSON #8C8989)
+.C_SKI_HALO <- rgb(242, 239, 237, 140, maxColorValue = 255)   # rgba(242,239,237,0.55)
+
+# POI geometry colours — exact from JSON paint properties
+.C_AIRPORT_LINE  <- rgb(191, 134, 162, 128, maxColorValue = 255)  # Airports rgba(191,134,162,0.5)
+.C_SKI_LIFT_LINE <- "#BF8F8F"                                      # SkiLifts line
+
+# POI point-marker stroke colours (circle-stroke-color from JSON)
+.C_SCHOOL_K12_PT <- "#808080"   # Schools_PreKto12 circle stroke
+.C_SCHOOL_HE_PT  <- "#807979"   # Schools_HigherEducation circle stroke
+.C_HEALTH_PT     <- "#BFA3A3"   # LicensedHealthCareFacilities icon colour
+.C_TRAIL_PT      <- "#8C8B89"   # Trailheads icon colour
+.C_GNIS_PT       <- "#807C7C"   # PlaceNamesGNIS2010 icon colour
+.C_OSM_PT        <- "#8C8B89"   # OpenSourcePlaces icon colour
+
+# POI label colours — exact from JSON text-color / text-halo-color
+.C_POI_LBL       <- "#8C8989"                                      # default (airport, school, ski loc, OSM, health)
+.C_POI_HALO_STD  <- rgb(230, 228, 225, 153, maxColorValue = 255)   # rgba(230,228,225,0.60)
+.C_POI_HALO_SCH  <- rgb(242, 239, 237, 140, maxColorValue = 255)   # rgba(242,239,237,0.55) schools / ski locs
+.C_POI_HALO_HE   <- rgb(230, 226, 218, 140, maxColorValue = 255)   # rgba(230,226,218,0.55) higher ed
+.C_TRAIL_LBL     <- "#807D7D"                                       # Trailheads
+.C_TRAIL_HALO_PT <- rgb(242, 236, 233, 153, maxColorValue = 255)   # rgba(242,236,233,0.60)
+.C_GNIS_LBL      <- "#807F7D"                                       # PlaceNamesGNIS2010
+.C_GNIS_HALO     <- rgb(230, 228, 225, 140, maxColorValue = 255)   # rgba(230,228,225,0.55)
+.C_BAY_LBL       <- "#829599"                                       # PlaceNamesGNIS2010 - Bay Labels
+.C_BAY_HALO      <- rgb(194, 204, 204, 128, maxColorValue = 255)   # rgba(194,204,204,0.50)
+.C_SKLIFT_LBL    <- "#FFFEFA"                                       # SkiLifts/label text (near-white)
+.C_SKLIFT_HALO   <- "#B39898"                                       # SkiLifts/label halo
+.C_CTR_LBL       <- "#8C8989"                                       # Contours/label
+.C_CTR_HALO      <- rgb(230, 228, 225, 128, maxColorValue = 255)   # rgba(230,228,225,0.50)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. ROAD LINEWIDTH LOOKUP TABLES
@@ -464,6 +492,21 @@ extract_label_coords <- function(sf_obj) {
 
 .fetch_hillshade <- function(hu, zoom) safe_read_mvt(hu, .hs_res_layer(zoom))
 
+# POI / location layers — all in base tile
+.fetch_poi <- function(bu, zoom) list(
+  airports    = if (zoom >= 10) safe_read_mvt(bu, "Airports")                        else .empty_sf(),
+  airport_pts = if (zoom >= 9)  safe_read_mvt(bu, "AirportLocations")                else .empty_sf(),
+  schools_k12 = if (zoom >= 14) safe_read_mvt(bu, "Schools_PreKto12")                else .empty_sf(),
+  schools_he  = if (zoom >= 13) safe_read_mvt(bu, "Schools_HigherEducation")         else .empty_sf(),
+  healthcare  = if (zoom >= 14) safe_read_mvt(bu, "LicensedHealthCareFacilities")    else .empty_sf(),
+  ski_locs    = if (zoom >= 10) safe_read_mvt(bu, "SkiAreaLocations")                else .empty_sf(),
+  ski_lifts   = if (zoom >= 12) safe_read_mvt(bu, "SkiLifts")                        else .empty_sf(),
+  trailheads  = if (zoom >= 14) safe_read_mvt(bu, "Trailheads")                      else .empty_sf(),
+  gnis        = if (zoom >= 12) safe_read_mvt(bu, "PlaceNamesGNIS2010")              else .empty_sf(),
+  gnis_bay    = if (zoom >= 11) safe_read_mvt(bu, "PlaceNamesGNIS2010 - Bay Labels") else .empty_sf(),
+  osm_places  = if (zoom >= 13) safe_read_mvt(bu, "OpenSourcePlaces")                else .empty_sf()
+)
+
 .fetch_labels <- function(lu, bu, zoom) {
   list(
     # Administrative / road labels — from LiteLabels tile
@@ -521,11 +564,10 @@ extract_label_coords <- function(sf_obj) {
     } else {
       .empty_sf()
     },
-    ski = if (zoom >= 13) {
-      safe_read_mvt(bu, "SkiAreaBoundaries/label")
-    } else {
-      .empty_sf()
-    }
+    ski         = if (zoom >= 13) safe_read_mvt(bu, "SkiAreaBoundaries/label")                           else .empty_sf(),
+    # Additional label layers (base tile, line-following — centroid placement used as fallback)
+    ski_lift_lbl = if (zoom >= 12) safe_read_mvt(bu, "SkiLifts/label")                                  else .empty_sf(),
+    ctr_lbl      = if (zoom >= 13) safe_read_mvt(bu, "Contours_10MeterDEM_50ft_generalized/label")      else .empty_sf()
   )
 }
 
@@ -933,37 +975,26 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
   transit <- .fetch_transit(bu, zoom)
   buildings <- .fetch_buildings(bu, zoom)
   hillshade <- .fetch_hillshade(hu, zoom)
-  lbl_data <- .fetch_labels(lu, bu, zoom)
+  lbl_data  <- .fetch_labels(lu, bu, zoom)
+  poi       <- .fetch_poi(bu, zoom)
 
-  .v(sprintf(
-    "  counties=%d  hillshade=%d  roads=%d  interstates=%d",
-    nrow(ground$counties),
-    nrow(hillshade),
-    nrow(roads_raw$roads),
-    nrow(roads_raw$interstates)
-  ))
-  .v(sprintf(
-    "  lakes=%d  rivers=%d  streams=%d  contours=%d",
-    nrow(water$lakes),
-    nrow(water$rivers),
-    nrow(water$streams),
-    nrow(ctrs_raw)
-  ))
-  .v(sprintf(
-    "  lbl_county=%d  lbl_city=%d  lbl_hwy=%d  lbl_street=%d",
-    nrow(lbl_data$county),
-    nrow(lbl_data$city),
-    nrow(lbl_data$highway),
-    nrow(lbl_data$street)
-  ))
-  .v(sprintf(
-    "  lbl_streams=%d  lbl_lakes=%d  lbl_monuments=%d  lbl_parks=%d  lbl_trails=%d",
-    nrow(lbl_data$streams),
-    nrow(lbl_data$lakes),
-    nrow(lbl_data$monuments),
-    nrow(lbl_data$parks),
-    nrow(lbl_data$trails)
-  ))
+  .v(sprintf("  counties=%d  hillshade=%d  roads=%d  interstates=%d",
+     nrow(ground$counties), nrow(hillshade),
+     nrow(roads_raw$roads), nrow(roads_raw$interstates)))
+  .v(sprintf("  lakes=%d  rivers=%d  streams=%d  contours=%d",
+     nrow(water$lakes), nrow(water$rivers), nrow(water$streams), nrow(ctrs_raw)))
+  .v(sprintf("  lbl_county=%d  lbl_city=%d  lbl_hwy=%d  lbl_street=%d",
+     nrow(lbl_data$county), nrow(lbl_data$city),
+     nrow(lbl_data$highway), nrow(lbl_data$street)))
+  .v(sprintf("  lbl_streams=%d  lbl_lakes=%d  lbl_monuments=%d  lbl_parks=%d  lbl_trails=%d",
+     nrow(lbl_data$streams), nrow(lbl_data$lakes),
+     nrow(lbl_data$monuments), nrow(lbl_data$parks), nrow(lbl_data$trails)))
+  .v(sprintf("  poi airports=%d  schools_k12=%d  schools_he=%d  healthcare=%d",
+     nrow(poi$airports), nrow(poi$schools_k12),
+     nrow(poi$schools_he), nrow(poi$healthcare)))
+  .v(sprintf("  poi ski_locs=%d  ski_lifts=%d  trailheads=%d  gnis=%d  osm=%d",
+     nrow(poi$ski_locs), nrow(poi$ski_lifts),
+     nrow(poi$trailheads), nrow(poi$gnis), nrow(poi$osm_places)))
 
   # — Post-process —
   counties <- ground$counties
@@ -1314,6 +1345,10 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
+  # 5b. Airport runway/taxiway lines — rgba(191,134,162,0.5), z≥10
+  if (nrow(poi$airports) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$airports, fill=NA, color=.C_AIRPORT_LINE, linewidth=0.15)
+
   # 6. County borders — 3-stroke, 0.15x scale from JSON px
   if (cbs$show) {
     if (!is.na(cbs$c1) && cbs$w1 > 0) {
@@ -1484,6 +1519,11 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       )
   }
 
+  # 12b. Ski lifts — #BF8F8F, dasharray [18,3,1,3], width 1.33px → 0.20mm, z≥12
+  if (nrow(poi$ski_lifts) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$ski_lifts, color=.C_SKI_LIFT_LINE,
+               linewidth=0.20, linetype="twodash")
+
   # 13. Transit — commuter rail
   if (nrow(transit$commuter_rail) > 0) {
     p <- p +
@@ -1557,6 +1597,36 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         linewidth = 0.04
       )
   }
+
+  # 14b. POI point markers — rendered as circles/shapes (icons not available in ggplot2)
+  # Zoom gates match JSON minzoom per layer.
+  if (nrow(poi$ski_locs) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$ski_locs,    shape=23, size=1.4,
+               fill="white", color="#999796", stroke=0.4)
+  if (nrow(poi$airport_pts) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$airport_pts, shape=21, size=1.8,
+               fill="#C8C0B8", color="#8C8985", stroke=0.4)
+  if (nrow(poi$gnis_bay) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$gnis_bay,    shape=21, size=0.6,
+               fill=.C_WATER_LBL, color=NA)
+  if (nrow(poi$gnis) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$gnis,        shape=24, size=0.9,
+               fill=.C_GNIS_PT, color=NA)
+  if (nrow(poi$osm_places) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$osm_places,  shape=21, size=0.9,
+               fill=.C_OSM_PT, color=NA)
+  if (nrow(poi$trailheads) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$trailheads,  shape=24, size=1.2,
+               fill=.C_TRAIL_PT, color=alpha(.C_TRAIL_PT, 0.7), stroke=0.3)
+  if (nrow(poi$schools_he) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$schools_he,  shape=21, size=1.5,
+               fill="transparent", color=.C_SCHOOL_HE_PT, stroke=0.6)
+  if (nrow(poi$schools_k12) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$schools_k12, shape=21, size=1.2,
+               fill="transparent", color=.C_SCHOOL_K12_PT, stroke=0.5)
+  if (nrow(poi$healthcare) > 0)
+    p <- p + ggplot2::geom_sf(data=poi$healthcare,  shape=21, size=1.2,
+               fill=.C_HEALTH_PT, color=alpha(.C_HEALTH_PT, 0.8), stroke=0.3)
 
   # ─ LABELS ────────────────────────────────────────────────────────────────
   # Feature labels drawn first (below city/county labels in z-order)
@@ -1734,22 +1804,103 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
     )
   }
 
+  # 15j. Contour elevation labels — Arial Bold Italic, z≥13; centroid approx (line-placement N/A)
+  if (nrow(lbl_data$ctr_lbl) > 0 && any(!is.na(lbl_data$ctr_lbl$map_label))) {
+    ctr_lbl_c <- extract_label_coords(lbl_data$ctr_lbl)
+    p <- .lbl(p, ctr_lbl_c, col=.C_CTR_LBL, halo=.C_CTR_HALO, sz=1.5, face="italic", fam=.F_HWY)
+  }
+
+  # 15k. Ski lift labels — #FFFEFA on #B39898 halo, z≥12
+  if (nrow(lbl_data$ski_lift_lbl) > 0 && any(!is.na(lbl_data$ski_lift_lbl$map_label))) {
+    sklift_lbl_c <- extract_label_coords(lbl_data$ski_lift_lbl)
+    p <- .lbl(p, sklift_lbl_c, col=.C_SKLIFT_LBL, halo=.C_SKLIFT_HALO, sz=1.5, face="italic", fam=.F_HWY)
+  }
+
+  # 15l. GNIS bay labels — water colour italic, z≥11
+  if (nrow(poi$gnis_bay) > 0 && any(!is.na(poi$gnis_bay$map_label))) {
+    bay_lbl <- extract_label_coords(poi$gnis_bay)
+    p <- .lbl(p, bay_lbl, col=.C_BAY_LBL, halo=.C_BAY_HALO, sz=1.5, face="italic", fam=.F_STREET)
+  }
+
+  # 15m. GNIS place labels (summits, geographic names) — #807F7D italic, z≥12
+  if (nrow(poi$gnis) > 0 && any(!is.na(poi$gnis$map_label))) {
+    gnis_lbl <- extract_label_coords(poi$gnis)
+    p <- .lbl(p, gnis_lbl, col=.C_GNIS_LBL, halo=.C_GNIS_HALO, sz=1.5, face="italic", fam=.F_STREET)
+  }
+
+  # 15n. OpenSourcePlaces labels — #8C8B89 italic, z≥14
+  if (nrow(poi$osm_places) > 0 && any(!is.na(poi$osm_places$map_label))) {
+    osm_lbl <- extract_label_coords(poi$osm_places)
+    p <- .lbl(p, osm_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_STD, sz=1.7, face="italic", fam=.F_STREET)
+  }
+
+  # 15o. Ski area location labels — #8C8989 italic, z≥11
+  if (nrow(poi$ski_locs) > 0 && any(!is.na(poi$ski_locs$map_label))) {
+    ski_loc_lbl <- extract_label_coords(poi$ski_locs)
+    p <- .lbl(p, ski_loc_lbl, col=.C_SKI_LBL, halo=.C_POI_HALO_SCH, sz=1.8, face="italic", fam=.F_STREET)
+  }
+
+  # 15p. Trailhead labels — #807D7D italic, z≥14
+  if (nrow(poi$trailheads) > 0 && any(!is.na(poi$trailheads$map_label))) {
+    trail_lbl <- extract_label_coords(poi$trailheads)
+    p <- .lbl(p, trail_lbl, col=.C_TRAIL_LBL, halo=.C_TRAIL_HALO_PT, sz=1.7, face="italic", fam=.F_STREET)
+  }
+
+  # 15q. Higher education labels — #8C8989 italic bold, z≥13
+  if (nrow(poi$schools_he) > 0 && any(!is.na(poi$schools_he$map_label))) {
+    she_lbl <- extract_label_coords(poi$schools_he)
+    p <- .lbl(p, she_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_HE, sz=1.9, face="bold.italic", fam=.F_STREET)
+  }
+
+  # 15r. K-12 school labels — #8C8989 italic, z≥14
+  if (nrow(poi$schools_k12) > 0 && any(!is.na(poi$schools_k12$map_label))) {
+    sk12_lbl <- extract_label_coords(poi$schools_k12)
+    p <- .lbl(p, sk12_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_SCH, sz=1.7, face="italic", fam=.F_STREET)
+  }
+
+  # 15s. Healthcare labels — #8C8989 italic, z≥14
+  if (nrow(poi$healthcare) > 0 && any(!is.na(poi$healthcare$map_label))) {
+    hc_lbl <- extract_label_coords(poi$healthcare)
+    p <- .lbl(p, hc_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_STD, sz=1.7, face="italic", fam=.F_STREET)
+  }
+
+  # 15t. Airport labels — #8C8989 italic, z≥10
+  if (nrow(poi$airport_pts) > 0 && any(!is.na(poi$airport_pts$map_label))) {
+    apt_lbl <- extract_label_coords(poi$airport_pts)
+    p <- .lbl(p, apt_lbl, col=.C_POI_LBL, halo=.C_POI_HALO_STD, sz=1.8, face="italic", fam=.F_STREET)
+  }
+
   # 15. County labels — Poller One, light text on gray halo
   # Word-wrap county names to match Mapbox GL's text-max-width behaviour.
   # The web renderer wraps "Salt Lake" → "Salt\nLake" at ~8-char line width.
   if (nrow(cnty_lbl) > 0 && any(!is.na(cnty_lbl$map_label))) {
-    cnty_lbl$map_label <- vapply(cnty_lbl$map_label, function(x) {
-      if (is.na(x)) return(NA_character_)
-      paste(strwrap(x, width = 8L), collapse = "\n")
-    }, character(1L))
+    cnty_lbl$map_label <- vapply(
+      cnty_lbl$map_label,
+      function(x) {
+        if (is.na(x)) {
+          return(NA_character_)
+        }
+        paste(strwrap(x, width = 8L), collapse = "\n")
+      },
+      character(1L)
+    )
     cls_i <- as.integer(suppressWarnings(median(
       cnty_lbl$map_label_class,
       na.rm = TRUE
     )))
-    if (is.na(cls_i)) cls_i <- 3L
+    if (is.na(cls_i)) {
+      cls_i <- 3L
+    }
     lbl_col <- if (cls_i >= 3L) .C_CNTY_LO else .C_CNTY_HI
-    p <- .lbl(p, cnty_lbl, col = lbl_col, halo = .C_CNTY_HALO,
-               sz = .sz_county(cls_i), face = "bold", fam = .F_COUNTY)
+    p <- .lbl(
+      p,
+      cnty_lbl,
+      col = lbl_col,
+      halo = .C_CNTY_HALO,
+      sz = .sz_county(cls_i),
+      face = "bold",
+      fam = .F_COUNTY
+    )
   }
 
   # 16. City / town labels
@@ -1834,5 +1985,5 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
 # ══════════════════════════════════════════════════════════════════════════════
 # 12. EXAMPLE CALL
 # ══════════════════════════════════════════════════════════════════════════════
-downtown_map <- build_ugrc_map(lon = -111.89, lat = 40.76, zoom = 9)
+downtown_map <- build_ugrc_map(lon = -111.89, lat = 40.76, zoom = 10)
 print(downtown_map)
