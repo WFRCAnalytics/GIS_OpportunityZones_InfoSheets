@@ -94,9 +94,13 @@ cat(sprintf(
 TRACT_BBOX_WGS84 <- sf::st_bbox(
   sf::st_transform(sf::st_as_sfc(TRACT_BBOX), sf::st_crs(4326L))
 )
-cat(sprintf("TRACT_BBOX WGS84: xmin=%.5f ymin=%.5f xmax=%.5f ymax=%.5f\n",
-            TRACT_BBOX_WGS84["xmin"], TRACT_BBOX_WGS84["ymin"],
-            TRACT_BBOX_WGS84["xmax"], TRACT_BBOX_WGS84["ymax"]))
+cat(sprintf(
+  "TRACT_BBOX WGS84: xmin=%.5f ymin=%.5f xmax=%.5f ymax=%.5f\n",
+  TRACT_BBOX_WGS84["xmin"],
+  TRACT_BBOX_WGS84["ymin"],
+  TRACT_BBOX_WGS84["xmax"],
+  TRACT_BBOX_WGS84["ymax"]
+))
 
 # Zoom from tract width (same formula as .tract_bbox_zoom)
 view_w_m <- exp_bb[["xmax"]] - exp_bb[["xmin"]]
@@ -156,27 +160,27 @@ roads_raw <- .fetch_roads(bu, TEST_ZOOM)
 transit <- .fetch_transit(bu, TEST_ZOOM)
 lbl_data <- .fetch_labels(lu, bu, TEST_ZOOM)
 
-ctys_crs <- sf::st_crs(ground$counties)$epsg
+ctys_crs  <- sf::st_crs(ground$counties)$epsg
 ctys_bbox <- sf::st_bbox(ground$counties)
 cat(sprintf(
-  "counties CRS epsg=%s  xmin=%.0f  ymin=%.0f  xmax=%.0f  ymax=%.0f\n",
+  "counties CRS epsg=%s  xmin=%.5f  ymin=%.5f  xmax=%.5f  ymax=%.5f\n",
   ctys_crs,
-  ctys_bbox["xmin"],
-  ctys_bbox["ymin"],
-  ctys_bbox["xmax"],
-  ctys_bbox["ymax"]
+  ctys_bbox["xmin"], ctys_bbox["ymin"],
+  ctys_bbox["xmax"], ctys_bbox["ymax"]
 ))
-# PASS: epsg=3857, values in metres
-# FAIL: epsg=4326, values in degrees → re-source src/ugrc_basemap.R
+# After safe_read_mvt revert: epsg=4326, values in degrees (~-112, ~40)
+# If epsg=3857 with wrong coords (~-4975133): old source still in memory → re-source
 
-stopifnot("counties must be EPSG:3857" = !is.na(ctys_crs) && ctys_crs == 3857L)
+# Data is in native 4326 — check for geographic CRS, not 3857
+stopifnot("counties must be geographic (4326/CRS84) — re-source if failing" =
+          is.na(ctys_crs) || ctys_crs == 4326L)
 
-# Overlap check in WGS84 (data is in 4326; TRACT_BBOX_WGS84 also in 4326)
+# Overlap check in 4326 degrees (TRACT_BBOX_WGS84 ≈ -112°, 40°)
 overlaps <- TRACT_BBOX_WGS84["xmin"] < ctys_bbox["xmax"] &
   TRACT_BBOX_WGS84["xmax"] > ctys_bbox["xmin"] &
   TRACT_BBOX_WGS84["ymin"] < ctys_bbox["ymax"] &
   TRACT_BBOX_WGS84["ymax"] > ctys_bbox["ymin"]
-cat(sprintf("TRACT_BBOX (WGS84) overlaps tile bbox: %s\n", overlaps))
+cat(sprintf("TRACT_BBOX_WGS84 overlaps tile counties bbox: %s\n", overlaps))
 stopifnot("TRACT_BBOX must overlap tile" = overlaps)
 
 cat(sprintf(
@@ -431,14 +435,17 @@ bm <- build_ugrc_map(TRACT_BBOX, TEST_ZOOM, crs = 3857L, verbose = TRUE)
 cat(sprintf("bm layers: %d\n", length(bm$layers)))
 print(bm) # full tile extent, no crop
 
-cat("\n── Step G: bm + coord_sf (extent from pre-clipped data, no xlim/ylim) ────\n")
-p_g <- bm + ggplot2::coord_sf(
-  crs         = sf::st_crs(3857L),
-  default_crs = sf::st_crs(4326L),
-  xlim        = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
-  ylim        = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
-  expand      = FALSE
+cat(
+  "\n── Step G: bm + coord_sf (extent from pre-clipped data, no xlim/ylim) ────\n"
 )
+p_g <- bm +
+  ggplot2::coord_sf(
+    crs = sf::st_crs(3857L),
+    default_crs = sf::st_crs(4326L),
+    xlim = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
+    ylim = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
+    expand = FALSE
+  )
 print(p_g)
 # PASS: basemap cropped to tract extent (data pre-clipped inside build_ugrc_map)
 # FAIL: still blank → re-source src/ugrc_basemap.R to pick up .clip() fix
@@ -449,11 +456,11 @@ cat(
 p_h <- bm +
   ggplot2::geom_sf(data = focal_3857, fill = NA, color = "red", linewidth = 2) +
   ggplot2::coord_sf(
-    crs         = sf::st_crs(3857L),
+    crs = sf::st_crs(3857L),
     default_crs = sf::st_crs(4326L),
-    xlim        = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
-    ylim        = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
-    expand      = FALSE
+    xlim = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
+    ylim = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
+    expand = FALSE
   )
 print(p_h)
 # PASS: basemap + red tract outline
@@ -565,11 +572,11 @@ p_i <- bm +
     stroke = 0.4
   ) +
   ggplot2::coord_sf(
-    crs         = map_crs_sf,
+    crs = map_crs_sf,
     default_crs = sf::st_crs(4326L),
-    xlim        = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
-    ylim        = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
-    expand      = FALSE
+    xlim = c(TRACT_BBOX_WGS84[["xmin"]], TRACT_BBOX_WGS84[["xmax"]]),
+    ylim = c(TRACT_BBOX_WGS84[["ymin"]], TRACT_BBOX_WGS84[["ymax"]]),
+    expand = FALSE
   ) +
   ggplot2::theme_void() +
   ggplot2::theme(
