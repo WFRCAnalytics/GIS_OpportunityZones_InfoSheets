@@ -790,19 +790,19 @@ extract_label_coords <- function(sf_obj) {
 # ══════════════════════════════════════════════════════════════════════════════
 # 8. LABEL SIZE HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
-# JSON text-size values in CSS pixels; divide by ~4.5 → ggplot2 units.
-# Zoom stops derived directly from each JSON label layer definition.
+# All sizes via .sz(json_px) — the single correct conversion.
+# bg.r for each label via .bgr(halo_px, sz_gg):
+#   bg.r = (halo_px × .PX_MM) / (sz_gg × 0.3528)
+#   where .PX_MM = 25.4/96, sz_gg = .sz(text_px), 0.3528 mm/pt conversion
 
+.bgr <- function(halo_px, sz_gg) (halo_px * .PX_MM) / (sz_gg * 0.3528)
+
+# County: Poller One Regular — 3 zoom classes with distinct sizes
+# JSON: cls 1 = 24px (z9), cls 2 = 26.667px (z10), cls 3 = 10.667px (z12+)
 .sz_county <- function(cls) {
-  if (cls <= 1L) {
-    # JSON 24px    / 4.36 ≈ 5.5
-    5.5
-  } else if (cls == 2L) {
-    # JSON 26.67px / 4.6  ≈ 5.8
-    5.8
-  } else {
-    2.4
-  } # JSON 10.67px / 4.5  ≈ 2.4  (corrected from 2.0)
+  if      (cls <= 1L) .sz(24.0)    # 6.349
+  else if (cls == 2L) .sz(26.667)  # 7.055
+  else                .sz(10.667)  # 2.822
 }
 
 # TRAX linewidths — raw JSON px → converted via .lw()
@@ -829,115 +829,94 @@ extract_label_coords <- function(sf_obj) {
   }
 }
 
+# City: Yu Gothic Bold — 3 prominence classes each with zoom-stop interpolation
+# JSON zoom stops from CitiesTownsLocations_VT (LiteLabels)
 .sz_city <- function(zoom, cls) {
-  if (is.na(cls) || cls >= 18L) {
-    return(3.5)
-  }
-  if (cls %in% c(0L, 3L, 6L, 9L, 12L, 15L)) {
-    # major cities
-    approx(
-      c(6, 7, 8, 9, 10, 11),
-      c(2.0, 2.1, 2.5, 2.8, 3.0, 3.3),
-      xout = zoom,
-      rule = 2
-    )$y
-  } else if (cls %in% c(1L, 4L, 7L, 10L, 13L, 16L)) {
-    # medium
-    approx(c(9, 10, 11), c(2.4, 2.6, 3.0), xout = zoom, rule = 2)$y
-  } else {
-    # minor
-    approx(c(9, 10, 11), c(2.0, 2.3, 2.5), xout = zoom, rule = 2)$y
-  }
+  if (is.na(cls) || cls >= 18L)
+    return(.sz(17.333))   # place labels constant → 4.586
+  if (cls %in% c(0L,3L,6L,9L,12L,15L))           # major
+    approx(c(6,7,8,9,10,11),
+           .sz(c(10.667,11.333,13.333,14.667,16.0,17.333)),
+           xout=zoom, rule=2)$y
+  else if (cls %in% c(1L,4L,7L,10L,13L,16L))     # medium
+    approx(c(9,10,11),
+           .sz(c(12.667,14.0,16.0)),
+           xout=zoom, rule=2)$y
+  else                                             # minor
+    approx(c(9,10,11),
+           .sz(c(10.667,12.0,13.333)),
+           xout=zoom, rule=2)$y
 }
 
+# Highway: Arial Bold / Helvetica Bold — shields fixed, names zoom-interpolated
+# JSON: shield 8.333px; names 8.333-16px across z7-z16
 .sz_hwy <- function(zoom, cls) {
-  if (is.na(cls) || cls %in% c(0L, 1L, 11L)) {
-    return(1.9)
-  } # shield badges
-  approx(
-    c(7, 9, 11, 12, 13, 14, 15, 16),
-    c(1.9, 1.9, 2.0, 2.1, 2.4, 2.8, 2.9, 3.1),
-    xout = zoom,
-    rule = 2
-  )$y
+  if (is.na(cls) || cls %in% c(0L,1L,11L)) return(.sz(8.333))  # shield badges
+  approx(c(7,9,11,12,13,14,15,16),
+         .sz(c(8.333,8.333,8.333,11.333,12.667,14.667,15.333,16.0)),
+         xout=zoom, rule=2)$y
 }
 
+# Street: Segoe UI Semibold — shields fixed, names zoom-interpolated
+# JSON: shield 8.333px; names 8.333-18.667px across z8-z16
 .sz_street <- function(zoom, cls) {
-  if (is.na(cls) || cls %in% c(0L, 1L, 2L)) {
-    return(1.9)
-  } # shields
-  approx(
-    c(8, 9, 11, 12, 13, 14, 15, 16),
-    c(1.9, 1.9, 2.0, 2.3, 2.5, 2.8, 3.1, 3.5),
-    xout = zoom,
-    rule = 2
-  )$y
+  if (is.na(cls) || cls %in% c(0L,1L,2L)) return(.sz(8.333))   # shields
+  approx(c(8,9,11,12,13,14,15,16),
+         .sz(c(8.333,8.333,8.333,12.0,13.333,15.333,16.667,18.667)),
+         xout=zoom, rule=2)$y
 }
 
-# ── Feature label size helpers (derived from JSON text-size stops) ─────────────
-# Stream / lake labels — size by prominence class and zoom
-# JSON: Major ~9-13px at z8-14, Medium ~8-11px, Minor ~8px z12+; scaled ÷ 4.5
+# ── Feature label size helpers — all via .sz(json_px) ─────────────────────────
+
+# Water (streams/lakes/GSL/bay): Verdana Bold Italic
+# JSON px from StreamsNHDHighRes/label and LakesNHDHighRes_OLD/label zoom bands
 .sz_water_lbl <- function(zoom, cls) {
-  if (is.na(cls) || cls == 0L) {
-    # Major
-    approx(
-      c(8, 9, 10, 11, 12, 13, 14),
-      c(1.4, 1.6, 1.8, 2.0, 2.2, 2.4, 2.6),
-      xout = zoom,
-      rule = 2
-    )$y
-  } else if (cls == 1L) {
-    # Medium
-    approx(
-      c(9, 10, 11, 12, 13, 14),
-      c(1.2, 1.4, 1.6, 1.8, 2.0, 2.2),
-      xout = zoom,
-      rule = 2
-    )$y
-  } else {
-    # Minor
-    approx(c(12, 13, 14), c(1.0, 1.2, 1.4), xout = zoom, rule = 2)$y
-  }
+  if (is.na(cls) || cls == 0L)   # Major streams/lakes
+    approx(c(8,9,10,11,12,13,14),
+           .sz(c(8.0,9.333,10.667,10.667,11.333,11.333,12.0)),
+           xout=zoom, rule=2)$y
+  else if (cls == 1L)             # Medium
+    approx(c(9,10,11,12,13,14),
+           .sz(c(8.0,8.667,9.333,9.333,10.0,10.0)),
+           xout=zoom, rule=2)$y
+  else                            # Minor
+    approx(c(12,13,14),
+           .sz(c(8.0,8.667,9.333)),
+           xout=zoom, rule=2)$y
 }
 
-# Monument / state park labels — national parks largest, minor parks smallest
-# JSON: Natl Parks ~14-18px z8-13+, State Parks ~10-14px z10-13+; scaled ÷ 4.5
+# Monuments/parks: Copperplate33bc Regular (→ Cinzel)
+# JSON px from UtahParksAndMonuments/label zoom bands
 .sz_monument_lbl <- function(zoom, cls) {
-  if (is.na(cls) || cls == 0L) {
-    # National parks / major monuments
-    approx(
-      c(8, 9, 10, 11, 12, 13),
-      c(1.6, 1.9, 2.2, 2.5, 2.8, 3.0),
-      xout = zoom,
-      rule = 2
-    )$y
-  } else if (cls == 1L) {
-    # Major state parks / minor monuments
-    approx(
-      c(9, 10, 11, 12, 13),
-      c(1.4, 1.6, 1.8, 2.0, 2.2),
-      xout = zoom,
-      rule = 2
-    )$y
-  } else {
-    # Remaining parks
-    approx(c(11, 12, 13), c(1.2, 1.4, 1.6), xout = zoom, rule = 2)$y
-  }
+  if (is.na(cls) || cls == 0L)   # National parks / major monuments
+    approx(c(8,9,10,11,12,13),
+           .sz(c(12.0,13.333,14.667,16.0,17.333,17.333)),
+           xout=zoom, rule=2)$y
+  else if (cls == 1L)             # Major state parks / minor monuments
+    approx(c(9,10,11,12,13),
+           .sz(c(10.667,12.0,12.667,12.667,13.333)),
+           xout=zoom, rule=2)$y
+  else                            # Remaining parks
+    approx(c(11,12,13),
+           .sz(c(9.333,10.667,10.667)),
+           xout=zoom, rule=2)$y
 }
 
-# Park / cemetery / golf / ski labels — small feature labels z10-13+
-# JSON: ~9-11px at z13-15; scaled ÷ 4.5
+# Parks/cemetery/golf/ski/trails: Segoe UI Semibold Italic (→ Source Sans 3)
+# JSON: 9.333px (ParksLocal) to 10.667px (at z14+), from ParksLocal/label
 .sz_park_lbl <- function(zoom) {
-  approx(c(10, 13, 14, 15), c(1.3, 1.6, 1.9, 2.1), xout = zoom, rule = 2)$y
+  approx(c(10,13,14,15),
+         .sz(c(9.333,9.333,10.667,10.667)),
+         xout=zoom, rule=2)$y
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 9. LABEL DRAW HELPER
 # ══════════════════════════════════════════════════════════════════════════════
-# Uses shadowtext::geom_shadowtext() for clean single-pass halo rendering.
-# bg.color = halo colour from JSON spec; bg.r controls halo spread.
+# bg.r = .bgr(halo_px, sz) ensures the halo matches the JSON text-halo-width
+# exactly at every zoom level. All callers must pass bgr= explicitly.
 
-.lbl <- function(p, data, col, halo, sz, face = "bold", fam = "") {
+.lbl <- function(p, data, col, halo, sz, bgr, face = "bold", fam = "") {
   if (nrow(data) == 0 || !any(!is.na(data$map_label))) {
     return(p)
   }
@@ -948,7 +927,7 @@ extract_label_coords <- function(sf_obj) {
       mapping = ggplot2::aes(x = X, y = Y, label = map_label),
       color = col,
       bg.color = halo,
-      bg.r = 0.15,
+      bg.r = bgr,
       size = sz,
       fontface = face,
       family = fam,
@@ -1818,6 +1797,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_WATER_LBL,
       halo = .C_WATER_HALO,
       sz = .sz_water_lbl(zoom, 0L),
+      bgr = .bgr(1.333, .sz_water_lbl(zoom, 0L)),
       face = "bold.italic",
       fam = .F_WATER
     )
@@ -1848,6 +1828,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_WATER_LBL,
         halo = .C_WATER_HALO,
         sz = sz_lake,
+        bgr = .bgr(1.333, sz_lake),
         face = "bold.italic",
         fam = .F_WATER
       )
@@ -1875,6 +1856,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_WATER_LBL,
         halo = .C_WATER_HALO,
         sz = sz_stm,
+        bgr = .bgr(1.333, sz_stm),
         face = "bold.italic",
         fam = .F_WATER
       )
@@ -1904,6 +1886,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = .C_MON_LBL,
         halo = .C_MON_HALO,
         sz = sz_mon,
+        bgr = .bgr(1.333, sz_mon),
         face = "plain",
         fam = .F_MUNI
       )
@@ -1919,6 +1902,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
+      bgr = .bgr(1.333, .sz_park_lbl(zoom)),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -1933,6 +1917,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
+      bgr = .bgr(1.333, .sz_park_lbl(zoom)),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -1949,6 +1934,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
+      bgr = .bgr(1.333, .sz_park_lbl(zoom)),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -1963,6 +1949,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_PARK_LBL,
       halo = .C_PARK_HALO,
       sz = .sz_park_lbl(zoom),
+      bgr = .bgr(1.333, .sz_park_lbl(zoom)),
       face = "bold",
       fam = .F_STREET
     )
@@ -1977,6 +1964,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_SKI_LBL,
       halo = .C_SKI_HALO,
       sz = .sz_park_lbl(zoom),
+      bgr = .bgr(1.333, .sz_park_lbl(zoom)),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -1991,6 +1979,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_CTR_LBL,
       halo = .C_CTR_HALO,
       sz = 1.5,
+      bgr = .bgr(1.333, 1.5),
       face = "bold.italic",
       fam = .F_HWY
     )
@@ -2008,6 +1997,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_SKLIFT_LBL,
       halo = .C_SKLIFT_HALO,
       sz = 1.5,
+      bgr = .bgr(1.333, 1.5),
       face = "italic",
       fam = .F_HWY
     )
@@ -2022,6 +2012,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_BAY_LBL,
       halo = .C_BAY_HALO,
       sz = 1.5,
+      bgr = .bgr(1.333, 1.5),
       face = "bold.italic",
       fam = .F_WATER
     )
@@ -2036,6 +2027,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_GNIS_LBL,
       halo = .C_GNIS_HALO,
       sz = 1.5,
+      bgr = .bgr(1.333, 1.5),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2050,6 +2042,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.7,
+      bgr = .bgr(1.333, 1.7),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2064,6 +2057,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_SKI_LBL,
       halo = .C_POI_HALO_SCH,
       sz = 1.8,
+      bgr = .bgr(1.333, 1.8),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2078,6 +2072,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_TRAIL_LBL,
       halo = .C_TRAIL_HALO_PT,
       sz = 1.7,
+      bgr = .bgr(1.333, 1.7),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2092,6 +2087,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_HE,
       sz = 1.9,
+      bgr = .bgr(1.333, 1.9),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2106,6 +2102,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_SCH,
       sz = 1.7,
+      bgr = .bgr(1.333, 1.7),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2120,6 +2117,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.7,
+      bgr = .bgr(1.333, 1.7),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2134,6 +2132,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_POI_LBL,
       halo = .C_POI_HALO_STD,
       sz = 1.8,
+      bgr = .bgr(1.333, 1.8),
       face = "bold.italic",
       fam = .F_STREET
     )
@@ -2169,6 +2168,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = lbl_col,
         halo = .C_CNTY_HALO,
         sz = .sz_county(ci),
+        bgr = .bgr(if (ci >= 3L) 1.0 else 1.333, .sz_county(ci)),  # cls3 halo=1.0px, cls1-2 halo=1.333px
         face = "bold",
         fam = .F_COUNTY
       )
@@ -2190,6 +2190,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_CITY,
       halo = .C_CITY_HALO,
       sz = .sz_city(zoom, cls_i),
+      bgr = .bgr(1.333, .sz_city(zoom, cls_i)),
       face = "bold",
       fam = .F_CITY
     )
@@ -2221,6 +2222,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
         col = cv,
         halo = .C_HWY_HALO,
         sz = sz,
+        bgr = .bgr(1.333, sz),
         face = "bold",
         fam = .F_HWY
       )
@@ -2240,6 +2242,7 @@ build_ugrc_map <- function(lon, lat, zoom, verbose = FALSE) {
       col = .C_STR,
       halo = .C_STR_HALO,
       sz = sz,
+      bgr = .bgr(1.333, sz),
       face = "bold",
       fam = .F_STREET
     )
