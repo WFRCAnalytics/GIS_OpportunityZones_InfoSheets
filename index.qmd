@@ -972,9 +972,12 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
 
   # 2. Bbox + zoom from focal tract
   geo          <- .tract_bbox_zoom(geoid, map_crs)
-  exp_bbox     <- geo$bbox        # sf::st_bbox in map_crs (metres)
+  exp_bbox     <- geo$bbox        # sf::st_bbox in map_crs (EPSG:3857 metres)
   zoom         <- geo$zoom
   view         <- sf::st_as_sfc(exp_bbox)
+  # Clip bounds in ESRI_MVT_CRS (the native tile CRS): x=Southing=−y_3857, y=Westing=−x_3857
+  xlim_esri    <- c(-exp_bbox[["ymax"]], -exp_bbox[["ymin"]])
+  ylim_esri    <- c(-exp_bbox[["xmax"]], -exp_bbox[["xmin"]])
   message(sprintf("[make_tract_map] zoom=%d  bbox xmin=%.0f ymin=%.0f xmax=%.0f ymax=%.0f",
                   zoom, exp_bbox[["xmin"]], exp_bbox[["ymin"]],
                   exp_bbox[["xmax"]], exp_bbox[["ymax"]]))
@@ -1013,13 +1016,13 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
     ggplot2::geom_sf(data=focal, fill=NA, color="#003b4f", linewidth=1.6) +
     ggplot2::geom_sf(data=exits_view, shape=17, color="#3A4A5A", size=5.0) +
     ggplot2::geom_sf(data=stops_view, shape=21, fill="#943030", color="white", size=5, stroke=0.4) +
-    # safe_read_mvt corrects the ESRI MVT axis convention to standard EPSG:3857.
-    # All layers (basemap + OZ overlays) and label x/y centroids are in map_crs
-    # metres, so xlim/ylim in metres with default_crs=NULL (= crs) is correct.
+    # Display in .ESRI_MVT_CRS (the tile's native axis convention).
+    # bm renders correctly without transformation — no PROJ pipeline needed.
+    # xlim/ylim converted from EPSG:3857 metres to ESRI_MVT_CRS coordinates.
     ggplot2::coord_sf(
-      crs    = map_crs_sf,
-      xlim   = c(exp_bbox[["xmin"]], exp_bbox[["xmax"]]),
-      ylim   = c(exp_bbox[["ymin"]], exp_bbox[["ymax"]]),
+      crs    = .ESRI_MVT_CRS,
+      xlim   = xlim_esri,
+      ylim   = ylim_esri,
       expand = FALSE
     ) +
     ggplot2::theme_void() +
