@@ -159,15 +159,15 @@ places <- sf::read_sf(
 ) |>
   sf::st_transform(crs)
 
-# Filter to study counties at read time; STATENAME and COUNTYNAME are the available attribute filters
+# Filter to study counties at read time; STATE = 2-digit FIPS, COUNTY = 3-digit FIPS
 oz_1 <- sf::read_sf(
   cache_paths$oz_1_tracts,
   query = sprintf(
     "SELECT OBJECTID, geom FROM oz_1_tracts
-     WHERE STATENAME = '%s'
-       AND COUNTYNAME IN (%s)",
-    settings$state_name,
-    county_names_in
+     WHERE STATE = '%s'
+       AND COUNTY IN (%s)",
+    settings$state_fips,
+    county_fips_in
   )
 ) |>
   sf::st_transform(crs)
