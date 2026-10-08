@@ -951,7 +951,7 @@ if (.bm_all_cached) {
   # XML here — actual tile data is fetched lazily by terra::crop() per tract.
   .wmts_base <- paste0(
     "WMTS:https://discover.agrc.utah.gov/login/path/",
-    "slogan-emerald-slalom-nevada/wmts/1.0.0/WMTSCapabilities.xml",
+    "sector-snake-paradox-reply/wmts/1.0.0/WMTSCapabilities.xml",
     ",layer=lite_basemap,tilematrixset=0to19,zoom_level="
   )
   .wmts_rasts <- purrr::set_names(
