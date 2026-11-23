@@ -913,6 +913,17 @@ wc_center_colors <- c(
 # device's resolution, so ggsave(dpi = 200) gets a basemap drawn natively at
 # 200 dpi. Tiles are cached by basemapper itself (tile_cache(); 250 MB cap).
 .basemap_style <- "UGRC.Lite"
+# Symbol scale (map pixels per output pixel), tuned against the earlier UGRC Lite
+# raster maps. basemapper's default (dpi / 96 ≈ 2.08 at 200 dpi) draws labels
+# slightly larger than the raster and lands near z12.9 on a ~7 km view, just
+# under the style's z13 label cutoff. At 1.75 the zoom is a decimal ~0.25 higher
+# (13.2 on that view): labels close to raster size, all z13 label sets on.
+# Chosen by comparing 1.0-2.0 side by side. The raster's 50 ft contours / 10 m
+# hillshade need z >= 14 (pixel_ratio <= 1 on a ~7 km view), which halves label
+# size, so 1.75 trades that detail for legible labels. Do not force tile_zoom:
+# UGRC tiles carry layers per LOD, so a mismatched tile zoom drops the
+# hillshade and shows tile seams.
+.basemap_pixel_ratio <- 1.75
 
 # ── Shared geometry helper ────────────────────────────────────────────────────
 # Returns the expanded bbox (sf::st_bbox with CRS attached) for a given tract
@@ -972,7 +983,8 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
   #      The plot carries `focal` as data so the basemap layer is never empty
   #      (ggplot2 skips drawing layers with zero-row data).
   ggplot2::ggplot(focal) +
-    basemapper::geom_basemap(.basemap_style, attribution = FALSE) +
+    basemapper::geom_basemap(.basemap_style, pixel_ratio = .basemap_pixel_ratio,
+                             attribution = FALSE) +
     ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
     ggplot2::scale_fill_manual(values=wc_center_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
     ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
