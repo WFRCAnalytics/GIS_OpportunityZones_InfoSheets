@@ -816,26 +816,26 @@ growth_info <- oz_tracts |>
 
 ```{r}
 #| label: growth-eru
-# 4) Equivalent Residential Units (ERU) added, normalized by total tract acres.
+# 4) Equivalent Residential Units (ERU) added, normalized by developable acres.
 #    Converts projected HH and job growth to a common density metric so tracts
 #    can be compared regardless of size. Conversion: 1 HH = 1 ERU, 1 job = 0.4 ERU
 #    (common planning assumption; adjust eru_jobs_factor if a different standard applies).
+#    Developable acres (from the ATO layer) is the denominator everywhere: info
+#    sheets, Excel workbook and workbook PDF. Tracts without developable acres
+#    (outside the ATO layer) get NA rather than a misleading 0.
 eru_jobs_factor <- 0.4
 
 growth_info <- growth_info |>
-  dplyr::left_join(
-    dplyr::select(total_acres_df, GEOID, total_acres),
-    by = "GEOID"
-  ) |>
+  dplyr::left_join(dev_acres_df, by = "GEOID") |>
   dplyr::mutate(
     eru_added = hh_added + jobs_added * eru_jobs_factor,
     eru_per_acre = dplyr::if_else(
-      total_acres > 0,
-      round(eru_added / total_acres, 2),
+      !is.na(dev_acres) & dev_acres > 0,
+      round(eru_added / dev_acres, 2),
       NA_real_
     )
   ) |>
-  dplyr::select(-total_acres)
+  dplyr::select(-dev_acres)
 ```
 
 ## Urban Institute
@@ -1061,6 +1061,11 @@ message("Saved report_data.rds and tract_maps.rds to ", remotes_dir)
 
 ## 2 — Export Excel
 
+Writes the workbook, then its PDF companion: the README, Summary and per-county
+sheets as Excel prints them, minus the All Data table. The PDF is rendered by
+`_workbook_pdf.qmd` (Quarto + Typst) from the same data and README text, so it
+needs no Excel, LibreOffice or virtual printer.
+
 ```{r}
 #| label: report-excel
 #| eval: false
@@ -1072,11 +1077,26 @@ if (!exists("tract_maps")) {
 }
 
 source("src/export_excel.R")
-export_excel(
+xlsx_path <- export_excel(
   report_data = report_data,
   tract_maps = tract_maps,
   settings = settings
 )
+
+# PDF companion — export_excel() has already written the map PNGs it embeds.
+# Same Windows lock pre-flight as the report-pdfs chunk: Typst writes
+# _workbook_pdf.pdf first, then Quarto renames it.
+if (file.exists("_workbook_pdf.pdf") && !suppressWarnings(file.remove("_workbook_pdf.pdf"))) {
+  stop("Close '_workbook_pdf.pdf' in your PDF viewer before running.", call. = FALSE)
+}
+workbook_pdf <- sub("\\.xlsx$", ".pdf", basename(xlsx_path))
+quarto::quarto_render(
+  input = "_workbook_pdf.qmd",
+  output_file = workbook_pdf,
+  execute_params = list(data_dir = remotes_dir, map_cache_dir = "data/map_cache")
+)
+file.rename(workbook_pdf, file.path(dirname(xlsx_path), workbook_pdf))
+message("Workbook PDF written to: ", file.path(dirname(xlsx_path), workbook_pdf))
 ```
 
 ## 3 — Export PDFs

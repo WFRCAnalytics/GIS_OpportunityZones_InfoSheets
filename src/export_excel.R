@@ -1,6 +1,9 @@
 # export_excel.R — Excel backup export for OZ 2.0 Info Sheets
 # Requires: openxlsx2 (install.packages("openxlsx2") then renv::snapshot())
 # Called from index.qmd `report` chunk after report_data and tract_maps are built.
+# README text and derived values are shared with the workbook PDF via workbook_content.R.
+
+source("src/workbook_content.R")
 
 # ── Brand palette (hex strings — converted to wbColour via .xl_col()) ─────────
 .XL_TEAL      <- "#003B4F"
@@ -376,11 +379,12 @@
       dims = .d1(r, .AD[["eru_added"]]),
       x = paste0("=", .cl("hh_added"), r, "+", .cl("jobs_added"), r, "*0.4"))
 
-    # ERU/ac  =  ERU Added / Dev Acres
+    # ERU/ac  =  ERU Added / Dev Acres (same definition as index.qmd).
+    # Blank — shown as "n/a" — when developable acres are unavailable, not 0.
     wb <- openxlsx2::wb_add_formula(wb, "All Data - Detailed",
       dims = .d1(r, .AD[["eru_per_acre"]]),
       x = paste0("=IFERROR(", .cl("eru_added"), r,
-                 "/", .cl("dev_acres"), r, ",0)"))
+                 "/", .cl("dev_acres"), r, ",\"\")"))
 
     # ATO Composite  =  average of 4 min-max-normalised subscore components (0-100)
     # Blank when subscores are unavailable (non-MPO tracts).
@@ -424,6 +428,7 @@
 # ── README sheet ──────────────────────────────────────────────────────────────
 
 .write_readme_sheet <- function(wb, county_names) {
+  content <- xl_readme_content(county_names)
   wb <- openxlsx2::wb_add_worksheet(wb, sheet = "README",
     tab_color = .xl_col(.XL_TEAL_MID))
   wb <- openxlsx2::wb_set_col_widths(wb, "README", cols = 1:4,
@@ -431,14 +436,13 @@
 
   # Row 1: Title
   wb <- .mff(wb, "README", 1, 1:4,
-    value = "OZ 2.0 Candidate Tracts — WFRC Analysis",
+    value = content$title,
     fill = .XL_TEAL, font_size = 16, bold = TRUE)
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 1, heights = 30)
 
   # Row 2: Subtitle
   wb <- .mff(wb, "README", 2, 1:4,
-    value = paste0("WFRC & MAG Region · Wasatch Front, Utah · Generated ",
-                   format(Sys.Date(), "%B %d, %Y")),
+    value = content$subtitle,
     fill = .XL_TEAL_MID, font_size = 9, font_color = .XL_SKY)
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 2, heights = 18)
 
@@ -452,16 +456,7 @@
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 4, heights = 16)
 
   # Rows 5-9: Methodology text
-  method_text <- paste0(
-    "This workbook presents the WFRC/MAG Opportunity Zone 2.0 candidate tract analysis ",
-    "for the nine-county Wasatch Front region. It covers every census tract on the ",
-    "federal OZ 2.0 eligible list, with metrics spanning land use, transit access, ",
-    "housing inventory, projected growth, and Access to Opportunities indicators. ",
-    "The Summary sheet provides a regional overview of all eligible tracts. ",
-    "Per-county sheets offer a detailed profile for each tract, including an embedded ",
-    "map and key metrics organized by theme. The All Data sheet contains the complete ",
-    "set of metrics in a flat, filterable table for cross-tract comparison and analysis."
-  )
+  method_text <- content$about
   wb <- .wc(wb, "README", 5, 1, method_text)
   wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(5:9, 1:4))
   wb <- openxlsx2::wb_add_fill(wb, "README", dims = .dr(5:9, 1:4), color = .xl_col(.XL_PANEL))
@@ -495,13 +490,8 @@
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = 12, heights = 16)
 
   # Rows 13+: sheet guide (All Data last)
-  sheet_guide <- c("README", "Summary - 4 Key Measures", paste0(county_names, " County - Detailed"), "All Data - Detailed")
-  sheet_desc  <- c(
-    "This sheet: about this workbook, abbreviation glossary, and data sources.",
-    "Regional overview: one row per tract with key profile and access metrics for all eligible tracts across the Wasatch Front.",
-    paste0(county_names, " County: per-tract detail blocks with embedded map and metrics organized by theme."),
-    "Complete dataset: all metrics for every tract in one filterable table. Use this sheet for cross-tract comparison and custom analysis."
-  )
+  sheet_guide <- content$sheets$name
+  sheet_desc  <- content$sheets$desc
   for (k in seq_along(sheet_guide)) {
     row_r  <- 12 + k
     fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
@@ -526,32 +516,8 @@
     fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = abbr_start, heights = 16)
 
-  abbrevs <- list(
-    c("ATO",        "Access to Opportunities",
-      "Composite 0-100 index combining driving and transit access to jobs and households."),
-    c("DEVACRES",   "Developable Acres",
-      "Developable land within a TAZ from the ATO layer; used as intersection weight for ATO scores."),
-    c("ERU",        "Equivalent Residential Unit",
-      "Growth density metric: 1 household = 1 ERU, 1 job = 0.4 ERU. ERU puts gains in job density on an equal footing with gains in residential housing unit density for comparison purposes."),
-    c("GEOID",      "Census Tract Geographic ID",
-      "11-digit FIPS code: 2-digit state + 3-digit county + 6-digit tract."),
-    c("MF",         "Multi-family housing",
-      "Apartments, condos, etc."),
-    c("OZ 1.0",     "Opportunity Zones (2018 round)",
-      "Prior federal OZ designations; overlap shown for context."),
-    c("OZ 2.0",     "Opportunity Zones 2.0 (current)",
-      "Current federal eligible tract list under evaluation."),
-    c("SAP",        "Station Area Plan",
-      "Adopted housing plan within 1/2-mile of a rail or BRT stop."),
-    c("SFA",        "Single Family Attached",
-      "Single family home with some form of shared wall or floor (i.e. includes duplexes, townhomes, and other 'missing middle' style homes)."),
-    c("SFD",        "Single Family Detached",
-      "Traditional single family home, with no walls shared with other housing units (i.e. excludes duplexes, townhomes, and other 'missing middle' style homes)."),
-    c("TAZ",        "Traffic Analysis Zone",
-      "WFRC/MAG forecast unit; growth projections are area-proportioned from TAZ to tract."),
-    c("WC / MUorC", "Wasatch Choice / Metro-Urban-City Center",
-      "WFRC/MAG regional growth center framework. MUorC = Metropolitan, Urban, or City center types.")
-  )
+  abbrevs <- lapply(seq_len(nrow(content$glossary)), function(k)
+    unlist(content$glossary[k, c("term", "full", "desc")], use.names = FALSE))
 
   hdr_row <- abbr_start + 1
   for (j in 1:3) {
@@ -603,62 +569,8 @@
   wb <- openxlsx2::wb_merge_cells(wb, "README", dims = .dr(meth_hdr, 2:4))
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = meth_hdr, heights = 16)
 
-  meth_entries <- list(
-    list(
-      metric = "ATO Composite Score",
-      text   = paste0(
-        "Each of the four raw ATO subscores — Jobs (Auto), Households (Auto), Jobs (Transit), ",
-        "Households (Transit) — is rescaled 0–100 using min-max normalization across all ",
-        "MPO-region tracts in this export. The four normalized values are then averaged to produce ",
-        "a single 0–100 composite index (higher = greater access). ",
-        "Scores are relative to the tracts included in this export: adding or removing tracts ",
-        "would shift individual values."
-      )
-    ),
-    list(
-      metric = "ATO % of County Avg",
-      text   = paste0(
-        "Tract ATO Composite Score ÷ average ATO Composite Score for all tracts in the same ",
-        "county × 100. The county average is computed via AVERAGEIF in the All Data sheet and ",
-        "excludes non-MPO tracts (Tooele County), which have no ATO data. ",
-        "A value of 100 means the tract matches its county average; values above 100 indicate ",
-        "above-average access for that county."
-      )
-    ),
-    list(
-      metric = "ERU Added / ERU per Acre",
-      text   = paste0(
-        "ERU (Equivalent Residential Unit) standardizes growth across land use types. ",
-        "ERU Added = Households Added + (Jobs Added × 0.4). ",
-        "ERU per Acre = ERU Added ÷ Developable Acres. ",
-        "The 0.4 weight reflects that employment uses are less land-intensive than housing. ",
-        "Growth figures are sourced from WFRC/MAG TAZ projections (2027–2037), ",
-        "area-proportioned to census tract boundaries using developable acres as the weight."
-      )
-    ),
-    list(
-      metric = "Cities",
-      text   = paste0(
-        "Determined by spatial intersection of the census tract boundary with U.S. Census ",
-        "TIGER/Line Place boundaries (incorporated cities, towns, and census-designated places). ",
-        "Municipalities covering less than 2% of the tract area are excluded to avoid listing ",
-        "artifacts from boundary slivers. Where multiple cities qualify, they are listed in ",
-        "descending order of intersection area."
-      )
-    ),
-    list(
-      metric = "SAP & ATO Availability",
-      text   = paste0(
-        "Station Area Plan (SAP) and Access to Opportunities (ATO) metrics are derived from ",
-        "WFRC/MAG datasets that cover only the MPO planning boundary. Tooele County tracts ",
-        "fall outside this boundary and therefore have no SAP or ATO data. These cells show ",
-        "'n/a' in the per-county detail sheets and are left blank in the All Data sheet. ",
-        "*Some SAP are showing '0', even though they have stations. This is because they were ",
-        "completed before the state law was enacted, and therefore, no housing data was reported. ",
-        "This is mostly pertinent to Salt Lake City and Ogden City."
-      )
-    )
-  )
+  meth_entries <- lapply(seq_len(nrow(content$methodology)), function(k)
+    list(metric = content$methodology$metric[k], text = content$methodology$text[k]))
 
   for (k in seq_along(meth_entries)) {
     row_r  <- meth_hdr + k
@@ -685,26 +597,15 @@
     fill = .XL_KEY_TINT, font_size = 8, bold = TRUE, font_color = .XL_AMBER)
   wb <- openxlsx2::wb_set_row_heights(wb, "README", rows = src_row, heights = 16)
 
-  sources <- c(
-    "Federal OZ 2.0 Eligibility List — U.S. Treasury / HUD",
-    "Urban Institute OZ Tool Classification — Urban Institute (Methodology Explanation)",
-    "Wasatch Choice for 2050 Centers & Districts — WFRC/MAG",
-    "ACS Population, Households, Income, Poverty, Unemployment — U.S. Census Bureau",
-    "UTA Rail/BRT Stops — Utah Transit Authority",
-    "Station Area Plans (SAP) — WFRC/MAG",
-    "Freeway Interchanges — WFRC/MAG",
-    "Housing Inventory — WFRC/MAG",
-    "Access to Opportunities (ATO) Scores — WFRC/MAG",
-    "TAZ Growth Projections 2027-2037 — WFRC/MAG"
-  )
+  sources     <- content$sources$text
+  source_urls <- content$sources$url
   for (k in seq_along(sources)) {
     row_r  <- src_row + k
     fill_c <- if (k %% 2 == 0) .XL_WHITE else .XL_HAIR
-    if (k == 2L) {
-      # Urban Institute row — full cell hyperlinks to UI project page
+    if (!is.na(source_urls[k])) {
+      # Linked source (Urban Institute) — the whole cell is a hyperlink
       wb <- openxlsx2::wb_add_formula(wb, "README", dims = .d1(row_r, 1),
-        x = paste0('=HYPERLINK("https://www.urban.org/projects/informing-2026-opportunity-zone-selections-state-and-local-decisionmakers/opportunity",',
-                   '"', sources[k], '")'))
+        x = paste0('=HYPERLINK("', source_urls[k], '",', '"', sources[k], '")'))
       wb <- openxlsx2::wb_add_font(wb, "README", dims = .d1(row_r, 1),
         name = "Poppins", size = 8, color = .xl_col(.XL_OZ_MORE), underline = "single")
     } else {

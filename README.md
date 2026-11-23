@@ -120,7 +120,7 @@ County order follows the WFRC region first (Box Elder, Weber, Davis, Salt Lake, 
 | **MUorC** | Metropolitan, Urban, or City center — higher-intensity WC designations |
 | **SAP** | Station Area Plan — adopted housing plan within ½-mile of rail or BRT |
 | **ATO** | Access to Opportunities — composite index combining driving and transit access to jobs and households |
-| **ERU** | Equivalent Residential Unit — 1 HH = 1 ERU, 1 job = 0.4 ERU (standard planning conversion) |
+| **ERU** | Equivalent Residential Unit — 1 HH = 1 ERU, 1 job = 0.4 ERU (standard planning conversion); ERU/acre = ERU added ÷ developable acres |
 | **TAZ** | Traffic Analysis Zone — WFRC/MAG small-area forecast unit |
 | **DEVACRES** | Developable acres in a TAZ; used as area-proportioning weight for ATO metrics |
 | **Urban Institute OZ Tool** | Third-party classification of OZ investment likelihood based on market indicators |

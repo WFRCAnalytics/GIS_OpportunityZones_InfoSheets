@@ -1,0 +1,341 @@
+---
+params:
+  data_dir: "data/remotes"
+  map_cache_dir: "data/map_cache"
+format:
+  typst:
+    fontsize: 8pt
+    keep-typ: false
+    font-paths: ["assets/fonts"]
+---
+
+```{=typst}
+// PDF companion to "Opportunity Zones 2.0 - WF Candidate Tract Analysis.xlsx":
+// the README, Summary and per-county sheets as Excel prints them (the All Data
+// table is left out). Built from the same data and README text as the workbook
+// (src/workbook_content.R), without Excel. Geometry is the workbook's own:
+// Excel column widths become proportional columns, and Excel row heights and
+// font sizes are multiplied by each sheet's print scale.
+#set page(paper: "us-letter", flipped: true, numbering: none)
+#set text(font: "Poppins", number-type: "lining", number-width: "tabular")
+#set par(justify: false, leading: 0.35em, spacing: 0pt)
+```
+
+```{r}
+#| label: setup
+#| include: false
+source("src/workbook_content.R")
+
+report_data <- readRDS(file.path(params$data_dir, "report_data.rds"))
+report_data <- report_data[order(report_data$county, report_data$GEOID), ]
+vals        <- xl_values(report_data)
+county_names <- levels(droplevels(report_data$county))
+readme       <- xl_readme_content(county_names)
+gen_date     <- format(Sys.Date(), "%B %d, %Y")
+
+# Workbook palette (export_excel.R)
+TEAL <- "#003B4F"; TEAL_MID <- "#0E5C72"; SKY <- "#7EC8E3"; AMBER <- "#C77B30"
+KEY_TINT <- "#F1F7F8"; HAIR <- "#EEF3F4"; INK <- "#16272D"; BODY <- "#3C4A4F"
+PANEL <- "#F7FAFB"; LINE <- "#CADDE2"; WHITE <- "#FFFFFF"
+YELLOW_TINT <- "#FFFDE0"; ORANGE_TINT <- "#FDE8D0"; LINK <- "#2F8FB0"
+
+oz_fill <- function(cls) {
+  if (is.na(cls)) return("#9AA3A8")
+  if (grepl("Likely to attract", cls, ignore.case = TRUE) &&
+      !grepl("More|Less|Un", cls, ignore.case = TRUE)) return("#15705A")
+  if (grepl("More likely", cls, ignore.case = TRUE)) return("#2F8FB0")
+  if (grepl("Less likely", cls, ignore.case = TRUE)) return("#D98A3D")
+  if (grepl("Unlikely|not likely", cls, ignore.case = TRUE)) return("#B4532E")
+  "#9AA3A8"
+}
+
+# ── Typst code builders (code mode throughout; data goes in as strings) ───────
+q   <- function(x) paste0('"', gsub('"', '\\\\"', gsub("\\\\", "\\\\\\\\", as.character(x))), '"')
+pt  <- function(x) paste0(format(round(x, 2), nsmall = 2, trim = TRUE), "pt")
+col <- function(hex) paste0('rgb("', hex, '")')
+
+# Text run: size in Excel points × sheet scale k
+tx <- function(s, size, k, fill = INK, bold = FALSE, link = NA, underline = FALSE) {
+  t <- paste0('text(size: ', pt(size * k), ', fill: ', col(fill),
+              if (bold) ', weight: "bold"' else '', ', ', q(s), ')')
+  if (underline) t <- paste0('underline(', t, ')')
+  if (!is.na(link)) t <- paste0('link(', q(link), ', ', t, ')')
+  t
+}
+
+# Positioned grid/table cell
+cell <- function(x, y, body = "[]", fill = NULL, colspan = 1, rowspan = 1,
+                 align = "left + horizon", inset = NULL, stroke = NULL, kind = "grid") {
+  paste0(kind, '.cell(x: ', x, ', y: ', y,
+         if (colspan > 1) paste0(', colspan: ', colspan) else '',
+         if (rowspan > 1) paste0(', rowspan: ', rowspan) else '',
+         if (!is.null(fill)) paste0(', fill: ', col(fill)) else '',
+         ', align: ', align,
+         if (!is.null(inset)) paste0(', inset: ', inset) else '',
+         if (!is.null(stroke)) paste0(', stroke: ', stroke) else '',
+         ', ', body, ')')
+}
+
+# Excel column widths (character units) -> proportional Typst columns. Excel
+# draws a column w characters wide as w * 7 + 5 px, so narrow columns carry
+# proportionally more padding.
+fr <- function(w) paste0("(", paste0(round(w * 7 + 5), "fr", collapse = ", "), ")")
+
+emit <- function(...) cat("```{=typst}\n", ..., "\n```\n\n", sep = "")
+
+# Row at least h Excel points tall (k-scaled) that still grows to fit its text
+min_h <- function(body, h, k) paste0('block(height: ', pt(h * k - 3), ', ', body, ')')
+```
+
+```{r}
+#| label: readme
+#| results: asis
+#| echo: false
+# ── README sheet: Excel default margins, print scale ~0.78 ──────────────────
+k <- 0.78
+rows <- character(0); hts <- character(0); y <- 0L
+add_row <- function(cells, h) { rows <<- c(rows, cells); hts <<- c(hts, h); y <<- y + 1L }
+section <- function(label) {
+  add_row(cell(0, y, tx(label, 8, k, AMBER, bold = TRUE), fill = KEY_TINT, colspan = 4,
+               kind = "table"), pt(16 * k))
+}
+spacer <- function(h = 8) add_row(character(0), pt(h * k))
+head_row <- function(labels, spans) {
+  x <- 0L; cs <- character(0)
+  for (j in seq_along(labels)) {
+    cs <- c(cs, cell(x, y, tx(labels[j], 8, k, WHITE, bold = TRUE), fill = TEAL,
+                     colspan = spans[j], kind = "table"))
+    x <- x + spans[j]
+  }
+  add_row(cs, pt(16 * k))
+}
+
+add_row(cell(0, y, tx(readme$title, 16, k, WHITE, bold = TRUE), fill = TEAL, colspan = 4,
+             kind = "table"), pt(30 * k))
+add_row(cell(0, y, tx(readme$subtitle, 9, k, SKY), fill = TEAL_MID, colspan = 4,
+             kind = "table"), pt(18 * k))
+spacer()
+section("ABOUT THIS WORKBOOK")
+add_row(cell(0, y, min_h(tx(readme$about, 9, k, BODY), 75, k), fill = PANEL, colspan = 4,
+             align = "left + top", inset = "(x: 3pt, y: 3pt)", kind = "table"), "auto")
+spacer()
+section("SHEETS IN THIS WORKBOOK")
+head_row(c("Sheet Name", "Description"), c(1, 3))
+for (i in seq_len(nrow(readme$sheets))) {
+  f <- if (i %% 2 == 0) WHITE else HAIR
+  add_row(c(cell(0, y, tx(readme$sheets$name[i], 8, k, TEAL, bold = TRUE), fill = f, kind = "table"),
+            cell(1, y, tx(readme$sheets$desc[i], 8, k, BODY), fill = f, colspan = 3, kind = "table")),
+          pt(16 * k))
+}
+spacer(); spacer()
+section("ABBREVIATIONS & GLOSSARY")
+head_row(c("Term", "Full Name", "Description"), c(1, 1, 2))
+for (i in seq_len(nrow(readme$glossary))) {
+  f <- if (i %% 2 == 0) WHITE else HAIR
+  g <- readme$glossary[i, ]
+  add_row(c(cell(0, y, min_h(tx(g$term, 8, k, TEAL, bold = TRUE), 28, k), fill = f, align = "left + top", kind = "table"),
+            cell(1, y, tx(g$full, 8, k, BODY), fill = f, align = "left + top", kind = "table"),
+            cell(2, y, tx(g$desc, 8, k, BODY), fill = f, colspan = 2, align = "left + top", kind = "table")),
+          "auto")
+}
+spacer(); spacer()
+section("METHODOLOGY NOTES")
+head_row(c("Metric", "How It Is Calculated"), c(1, 3))
+for (i in seq_len(nrow(readme$methodology))) {
+  f <- if (i %% 2 == 0) WHITE else HAIR
+  m <- readme$methodology[i, ]
+  add_row(c(cell(0, y, min_h(tx(m$metric, 8, k, TEAL, bold = TRUE), 52, k), fill = f, align = "left + top", kind = "table"),
+            cell(1, y, tx(m$text, 8, k, BODY), fill = f, colspan = 3, align = "left + top", kind = "table")),
+          "auto")
+}
+spacer(); spacer()
+section("DATA SOURCES")
+for (i in seq_len(nrow(readme$sources))) {
+  f <- if (i %% 2 == 0) WHITE else HAIR
+  s <- readme$sources[i, ]
+  body <- if (is.na(s$url)) tx(s$text, 8, k, BODY) else tx(s$text, 8, k, LINK, link = s$url, underline = TRUE)
+  add_row(cell(0, y, body, fill = f, colspan = 4, kind = "table"), pt(15 * k))
+}
+
+# Wrapped README text gets Excel's roomier line spacing (~1.5x the font size)
+emit(
+  '#set page(margin: (x: 0.7in, y: 0.75in))\n',
+  '#[#set par(leading: 0.85em)\n',
+  '#table(columns: ', fr(c(28, 55, 28, 28)), ', rows: (', paste(hts, collapse = ", "), '),\n',
+  '  stroke: none, inset: (x: 3pt, y: 1.5pt), align: left + horizon,\n  ',
+  paste(rows, collapse = ",\n  "), ')]'
+)
+```
+
+```{r}
+#| label: summary
+#| results: asis
+#| echo: false
+# ── Summary sheet (hidden profile/UI columns stay hidden), print scale ~0.8 ──
+k <- 0.8
+title <- paste0("OZ 2.0 Eligible Census Tracts — Wasatch Front Region  |  ", gen_date)
+hdr <- c(
+  cell(0, 0, tx(title, 14, k, WHITE, bold = TRUE), fill = TEAL, colspan = 12, kind = "table"),
+  cell(0, 1, tx("#", 7, k, SKY, bold = TRUE), fill = TEAL, align = "center + bottom", kind = "table"),
+  cell(1, 1, tx("IDENTITY", 7, k, WHITE, bold = TRUE), fill = TEAL, colspan = 3,
+       align = "center + bottom", kind = "table"),
+  cell(4, 1, tx("FOUR KEY MEASURES", 7, k, AMBER, bold = TRUE), fill = KEY_TINT, colspan = 4,
+       align = "center + bottom", kind = "table"),
+  cell(8, 1, tx("WITHIN COUNTY RANKING", 7, k, AMBER, bold = TRUE), fill = ORANGE_TINT, colspan = 4,
+       align = "center + bottom", kind = "table")
+)
+labels <- c("#", "GEOID", "County", "Tract Description", "WC MUorC %", "ATO /100",
+            "SAP HH/ac", "ERU/ac", "MUorC Rank", "ATO Rank", "SAP Rank", "ERU Rank")
+for (j in seq_along(labels)) {
+  bg <- if (j >= 9) ORANGE_TINT else if (j >= 5) KEY_TINT else TEAL
+  fg <- if (j >= 9) AMBER else if (j >= 5) INK else WHITE
+  hdr <- c(hdr, cell(j - 1, 2, tx(labels[j], 8, k, fg, bold = TRUE), fill = bg,
+                     align = "center + bottom", kind = "table"))
+}
+
+body <- character(0); hts <- c(pt(28 * k), pt(14 * k), pt(30 * k)); y <- 3L
+for (cn in county_names) {
+  cv <- vals[vals$county == cn, ]
+  body <- c(body, cell(0, y, tx(paste0(cn, " County  —  ", nrow(cv), " Eligible Tracts"), 9, k,
+                                WHITE, bold = TRUE), fill = TEAL_MID, colspan = 12, kind = "table"))
+  hts <- c(hts, pt(18 * k)); y <- y + 1L
+  for (i in seq_len(nrow(cv))) {
+    t <- cv[i, ]
+    row_fill <- if (i %% 2 == 0) WHITE else HAIR
+    key_fill <- if (i %% 2 == 0) WHITE else KEY_TINT
+    rk <- function(v) if (is.na(v)) "-" else as.character(v)
+    texts <- c(sprintf("%02d", i), t$GEOID, as.character(t$county), t$tract_label,
+               xl_display(t$wc_muc_pct, "wc_muc_pct"), xl_display(t$ato_composite, "ato_composite"),
+               xl_display(t$sap_planned_hh_per_acre, "sap_planned_hh_per_acre"),
+               xl_display(t$eru_per_acre, "eru_per_acre"),
+               rk(t$rank_muc), rk(t$rank_ato), rk(t$rank_sap), rk(t$rank_eru))
+    for (j in seq_along(texts)) {
+      body <- c(body, cell(j - 1, y, tx(texts[j], 9, k, INK),
+                           fill = if (j >= 5) key_fill else row_fill,
+                           align = if (j >= 5) "right + horizon" else "left + horizon",
+                           kind = "table"))
+    }
+    hts <- c(hts, pt(16 * k)); y <- y + 1L
+  }
+}
+
+emit(
+  '#pagebreak()\n',
+  '#table(columns: ', fr(c(4, 13, 12, 38, 8, 7, 7, 7, 6, 6, 6, 6)),
+  ', rows: (', paste(hts, collapse = ", "), '),\n',
+  '  stroke: none, inset: (x: 3pt, y: 1pt),\n',
+  '  table.header(repeat: true,\n    ', paste(hdr, collapse = ",\n    "), '),\n  ',
+  paste(body, collapse = ",\n  "), ')'
+)
+```
+
+```{r}
+#| label: counties
+#| results: asis
+#| echo: false
+# ── Per-county sheets: narrow margins, three tract blocks per page, scale ~0.59 ──
+k <- 0.59
+widths <- c(28, 22, 22, 3, 22, 12, 3, 26, 12, 3, 24, 20)
+map_dir <- params$map_cache_dir
+
+# Rows 0-16 of a tract block (export_excel.R .write_tract_block); rows 17-22
+# are 8 pt spacers between blocks.
+block_heights <- c(22, 6, 14, rep(15, 9), 13, rep(15, 4))
+
+sub_hdr <- function(x, y, label, fg = AMBER) {
+  cell(x, y, tx(label, 7, k, fg, bold = TRUE), fill = KEY_TINT, colspan = 2)
+}
+kv <- function(x, y, label, value, vfill = NULL, value_align = "right + horizon") {
+  c(cell(x, y, tx(label, 8, k, BODY), fill = WHITE),
+    cell(x + 1, y, tx(value, 9, k, INK, bold = TRUE), fill = if (is.null(vfill)) WHITE else vfill,
+         align = value_align))
+}
+
+tract_block <- function(t, n) {
+  v <- function(m) xl_display(t[[m]], m)
+  header <- paste0(sprintf("%02d", n), "  —  ", t$tract_label, "  |  GEOID ", t$GEOID,
+                   "  |  ", format(round(t$total_acres), big.mark = ""), " ac")
+  map_png <- file.path(map_dir, paste0(t$GEOID, "_xl.png"))
+  map <- if (file.exists(map_png)) {
+    paste0('image(', q(gsub("\\\\", "/", map_png)), ', width: 100%, height: 100%, fit: "cover")')
+  } else "[]"
+
+  cells <- c(
+    cell(0, 0, tx(header, 10, k, WHITE, bold = TRUE), fill = oz_fill(t$oztoolclassification), colspan = 12),
+    cell(0, 2, map, rowspan = 15, inset = "0pt", stroke = paste0("(right: 0.5pt + ", col(LINE), ")")),
+    sub_hdr(1, 2, "TRACT PROFILE"), sub_hdr(4, 2, "CENTERS & DISTRICTS"),
+    sub_hdr(7, 2, "STATION AREA PLANNING (SAP)"),
+    sub_hdr(10, 2, "WORKPLACE ACCESS TO OPPORTUNITIES (ATO)"),
+    # r+3
+    kv(1, 3, "Cities", ifelse(is.na(t$cities), "-", t$cities), value_align = "left + horizon"),
+    kv(4, 3, "WC Center Overlap %", v("wc_muc_pct"), YELLOW_TINT),
+    kv(7, 3, "Transit Stations (Fixed Guideway)", v("transit_stop_count"), YELLOW_TINT),
+    kv(10, 3, "Composite ATO Score", v("ato_composite"), YELLOW_TINT),
+    # r+4
+    kv(1, 4, "Population", v("pop")), kv(4, 4, "Metropolitan Center", v("wc_pct_metropolitan_center")),
+    kv(7, 4, "Station Area Acres", v("sap_acres")),
+    kv(10, 4, "ATO % of County Avg", v("ato_pct_county_avg"), YELLOW_TINT),
+    # r+5
+    kv(1, 5, "Households", v("hh")), kv(4, 5, "Urban Center", v("wc_pct_urban_center")),
+    kv(7, 5, "Station Area % of Tract", v("sap_pct")), sub_hdr(10, 5, "AUTO ACCESS", TEAL),
+    # r+6
+    kv(1, 6, "Total Acres", v("total_acres")), kv(4, 6, "City Center", v("wc_pct_city_center")),
+    kv(7, 6, "Additional Planned Housing w/in SAP", v("sap_planned_hh_per_acre")),
+    kv(10, 6, "Freeway Exits", v("freeway_exit_count")),
+    # r+7
+    kv(1, 7, "Developable Acres", v("dev_acres")),
+    kv(4, 7, "Neighborhood Center", v("wc_pct_neighborhood_center")),
+    kv(10, 7, "ATO Jobs (Auto)", v("ato_jobauto")),
+    # r+8
+    kv(1, 8, "Poverty Rate", ifelse(is.na(t$pvrty_r), "-", t$pvrty_r)),
+    kv(4, 8, "Employment District", v("wc_pct_employment_district")),
+    sub_hdr(7, 8, "PROJECTED TRACT GROWTH 2027-37 (RTP Forecast)"),
+    kv(10, 8, "ATO Households (Auto)", v("ato_hhauto")),
+    # r+9
+    kv(1, 9, "Unemployment Rate", ifelse(is.na(t$unmpl_r), "-", t$unmpl_r)),
+    kv(4, 9, "Industrial District", v("wc_pct_industrial_district")),
+    kv(7, 9, "Households Added", v("hh_added")), sub_hdr(10, 9, "TRANSIT ACCESS", TEAL),
+    # r+10
+    kv(1, 10, "Median Family Income", v("mfi")), kv(4, 10, "Retail District", v("wc_pct_retail_district")),
+    kv(7, 10, "Population Added", v("pop_added")), kv(10, 10, "ATO Jobs (Transit)", v("ato_jobtransit")),
+    # r+11
+    kv(7, 11, "Jobs Added", v("jobs_added")), kv(10, 11, "ATO Households (Transit)", v("ato_hhtransit")),
+    # r+12
+    sub_hdr(1, 12, "OVERLAP W/ OPPORTUNITY ZONES 1.0"), sub_hdr(4, 12, "2025 HOUSING UNIT INVENTORY"),
+    kv(7, 12, "ERU Added", v("eru_added")),
+    # r+13
+    kv(1, 13, "OZ 1.0 Acres", v("oz1_acres")), kv(4, 13, "Total Units", v("units_total")),
+    kv(7, 13, "ERU per Acre", v("eru_per_acre")), sub_hdr(10, 13, "URBAN INSTITUTE ANALYSIS"),
+    # r+14
+    kv(1, 14, "OZ 1.0 % of Tract", v("oz1_pct")), kv(4, 14, "Residential Acres", v("res_acres_total")),
+    kv(10, 14, "Investment Likelihood", t$oz_short),
+    # r+15, r+16
+    kv(4, 15, "SFD Acres", v("res_acres_sfd")), kv(4, 16, "MF / SFA Acres", v("res_acres_mf_sfa"))
+  )
+  paste0('#grid(columns: ', fr(widths), ', rows: (',
+         paste(pt(block_heights * k), collapse = ", "), '),\n',
+         '  inset: (x: 2pt, y: 0pt), align: left + horizon,\n  ',
+         paste(cells, collapse = ",\n  "), ')')
+}
+
+out <- '#set page(margin: 0.25in)\n'
+for (cn in county_names) {
+  cv <- vals[vals$county == cn, ]
+  title <- paste0(
+    '#pagebreak(weak: true)\n',
+    '#grid(columns: ', fr(widths), ', rows: (', pt(28 * k), ', ', pt(18 * k), ', ', pt(8 * k), '),\n',
+    '  inset: (x: 2pt, y: 0pt), align: left + horizon,\n  ',
+    cell(0, 0, tx(paste0(cn, " County — OZ 2.0 Candidate Tracts — Detail"), 14, k, WHITE, bold = TRUE),
+         fill = TEAL, colspan = 12), ',\n  ',
+    cell(0, 1, tx(paste0("WFRC & MAG Region  |  Generated ", gen_date), 9, k, SKY),
+         fill = TEAL_MID, colspan = 12), ')\n'
+  )
+  blocks <- character(0)
+  for (i in seq_len(nrow(cv))) {
+    sep <- if (i == 1) "" else if ((i - 1) %% 3 == 0) "#pagebreak()\n" else paste0('#v(', pt(48 * k), ')\n')
+    blocks <- c(blocks, paste0(sep, tract_block(cv[i, ], i)))
+  }
+  out <- paste0(out, title, paste(blocks, collapse = "\n"), "\n")
+}
+emit(out)
+```

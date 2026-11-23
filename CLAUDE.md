@@ -44,11 +44,16 @@ renv::snapshot()
 index.qmd                  — master pipeline: data assembly, maps, report dispatch
 _county_summary.qmd        — parameterized summary table (one page per county)
 _county_detail.qmd         — parameterized detail pages (one page per tract)
+_workbook_pdf.qmd          — PDF companion to the Excel workbook (README, Summary,
+                             county sheets as Excel prints them; no All Data table)
 config/
   data_sources.yml         — all input layer paths/URLs
   settings.yml             — map dimensions, CRS, output dir
 src/
   download_data.R          — caching layer for remote GIS data
+  export_excel.R           — Excel workbook (openxlsx2, live formulas)
+  workbook_content.R       — README text + R versions of the workbook's formulas,
+                             shared by export_excel.R and _workbook_pdf.qmd
 data/remotes/              — gitignored; populated at runtime
   report_data.rds          — joined master table (one row per tract)
   tract_maps.rds           — named list of ggplot objects keyed by GEOID
@@ -56,6 +61,7 @@ data/remotes/              — gitignored; populated at runtime
 output/
   summary/                 — <County>_OZ_Summary.pdf per county
   detail/                  — <County>_OZ_Detail.pdf per county
+  Opportunity Zones 2.0 - WF Candidate Tract Analysis.xlsx / .pdf — workbook + its PDF
 ```
 
 ## Architecture
@@ -131,7 +137,7 @@ Child documents emit Typst by `cat()`-ing inside `#| results: asis` chunks:
 | **MUorC** | Metropolitan, Urban, or City center type (higher-intensity WC designations) |
 | **SAP** | Station Area Plan — adopted housing plan within ½-mile of a rail/BRT stop |
 | **ATO** | Access to Opportunities — composite 0–100 index (driving + transit, jobs + HHs) |
-| **ERU** | Equivalent Residential Unit — growth measure: 1 HH = 1 ERU, 1 job = 0.4 ERU |
+| **ERU** | Equivalent Residential Unit — growth measure: 1 HH = 1 ERU, 1 job = 0.4 ERU. ERU per acre = ERU added ÷ **developable** acres everywhere (info sheets, workbook, workbook PDF) |
 | **TAZ** | Traffic Analysis Zone — WFRC/MAG forecast unit for growth projections |
 | **DEVACRES** | Developable acres within a TAZ (from ATO layer); used as intersection weight |
 
