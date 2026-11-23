@@ -433,6 +433,52 @@
       "NeedsCompilation": "yes",
       "Repository": "CRAN"
     },
+    "basemapper": {
+      "Package": "basemapper",
+      "Version": "0.1.0",
+      "Source": "GitHub",
+      "Title": "Headless Spatial Basemap Renderer",
+      "Authors@R": "person(\"Pukar\", \"Bhandari\", email = \"arpuuuk@gmail.com\", role = c(\"aut\", \"cre\"))",
+      "Description": "Renders MapLibre GL styled basemaps (vector and raster tiles) headlessly with a Rust core: a software port of MapLibre GL JS's renderer, tested pixel by pixel against MapLibre GL JS. Renders at any fractional zoom and pixel ratio to PNG, rasters and arrays, or to true vector SVG; several styles can be stacked. Integrates with ggplot2 via geom_basemap() and with tmap v4 via tm_basemap(), rendering at the output device's resolution.",
+      "URL": "https://ar-puuk.github.io/basemapper/r/, https://github.com/ar-puuk/basemapper",
+      "BugReports": "https://github.com/ar-puuk/basemapper/issues",
+      "License": "MIT + file LICENSE",
+      "Encoding": "UTF-8",
+      "Roxygen": "list(markdown = TRUE)",
+      "SystemRequirements": "Cargo (Rust package manager), GNU make",
+      "Depends": [
+        "R (>= 4.1.0)"
+      ],
+      "Imports": [
+        "ggplot2 (>= 3.4)",
+        "grDevices",
+        "grid",
+        "stats",
+        "tools",
+        "sf (>= 1.0)",
+        "jsonlite (>= 1.8)",
+        "terra (>= 1.7)"
+      ],
+      "Suggests": [
+        "roxygen2 (>= 7.3)",
+        "testthat (>= 3.0)",
+        "rextendr (>= 0.3)",
+        "tmap (>= 4.0)",
+        "knitr",
+        "rmarkdown"
+      ],
+      "Config/testthat/edition": "3",
+      "Config/roxygen2/version": "8.1.1",
+      "Author": "Pukar Bhandari [aut, cre]",
+      "Maintainer": "Pukar Bhandari <arpuuuk@gmail.com>",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteUsername": "ar-puuk",
+      "RemoteRepo": "basemapper",
+      "RemoteSubdir": "r-basemapper",
+      "RemoteRef": "v0.1.0",
+      "RemoteSha": "9f43edbd7ea9e57a3e0c124993b98375d11f7a28"
+    },
     "bit": {
       "Package": "bit",
       "Version": "4.6.0",
