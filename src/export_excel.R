@@ -529,22 +529,28 @@
   abbrevs <- list(
     c("ATO",        "Access to Opportunities",
       "Composite 0-100 index combining driving and transit access to jobs and households."),
+    c("DEVACRES",   "Developable Acres",
+      "Developable land within a TAZ from the ATO layer; used as intersection weight for ATO scores."),
     c("ERU",        "Equivalent Residential Unit",
-      "Growth density metric: 1 household = 1 ERU, 1 job = 0.4 ERU."),
-    c("SAP",        "Station Area Plan",
-      "Adopted housing plan within 1/2-mile of a rail or BRT stop."),
-    c("WC / MUorC", "Wasatch Choice / Metro-Urban-City Center",
-      "WFRC/MAG regional growth center framework. MUorC = Metropolitan, Urban, or City center types."),
+      "Growth density metric: 1 household = 1 ERU, 1 job = 0.4 ERU. ERU puts gains in job density on an equal footing with gains in residential housing unit density for comparison purposes."),
+    c("GEOID",      "Census Tract Geographic ID",
+      "11-digit FIPS code: 2-digit state + 3-digit county + 6-digit tract."),
+    c("MF",         "Multi-family housing",
+      "Apartments, condos, etc."),
     c("OZ 1.0",     "Opportunity Zones (2018 round)",
       "Prior federal OZ designations; overlap shown for context."),
     c("OZ 2.0",     "Opportunity Zones 2.0 (current)",
       "Current federal eligible tract list under evaluation."),
+    c("SAP",        "Station Area Plan",
+      "Adopted housing plan within 1/2-mile of a rail or BRT stop."),
+    c("SFA",        "Single Family Attached",
+      "Single family home with some form of shared wall or floor (i.e. includes duplexes, townhomes, and other 'missing middle' style homes)."),
+    c("SFD",        "Single Family Detached",
+      "Traditional single family home, with no walls shared with other housing units (i.e. excludes duplexes, townhomes, and other 'missing middle' style homes)."),
     c("TAZ",        "Traffic Analysis Zone",
       "WFRC/MAG forecast unit; growth projections are area-proportioned from TAZ to tract."),
-    c("DEVACRES",   "Developable Acres",
-      "Developable land within a TAZ from the ATO layer; used as intersection weight for ATO scores."),
-    c("GEOID",      "Census Tract Geographic ID",
-      "11-digit FIPS code: 2-digit state + 3-digit county + 6-digit tract.")
+    c("WC / MUorC", "Wasatch Choice / Metro-Urban-City Center",
+      "WFRC/MAG regional growth center framework. MUorC = Metropolitan, Urban, or City center types.")
   )
 
   hdr_row <- abbr_start + 1
@@ -646,8 +652,10 @@
         "Station Area Plan (SAP) and Access to Opportunities (ATO) metrics are derived from ",
         "WFRC/MAG datasets that cover only the MPO planning boundary. Tooele County tracts ",
         "fall outside this boundary and therefore have no SAP or ATO data. These cells show ",
-        "'n/a' in the per-county detail sheets and are left blank in ",
-        "the All Data sheet."
+        "'n/a' in the per-county detail sheets and are left blank in the All Data sheet. ",
+        "*Some SAP are showing '0', even though they have stations. This is because they were ",
+        "completed before the state law was enacted, and therefore, no housing data was reported. ",
+        "This is mostly pertinent to Salt Lake City and Ogden City."
       )
     )
   )
