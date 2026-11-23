@@ -24,7 +24,7 @@ format:
 
 // Tract name on one line (10.5 px): if wider than the cell, drop characters
 // until the name plus an ellipsis fits. The full name is on the detail sheet.
-#let oneline(s, w: 1.5625in - 12pt) = context {
+#let oneline(s, w: 2.437in - 12pt) = context {
   let t(x) = text(size: 7.9pt, weight: "semibold", fill: c-ink, x)
   if measure(t(s)).width <= w { t(s) } else {
     let c = s.clusters()
@@ -275,12 +275,14 @@ for (i in seq_len(n_tracts)) {
   rows <- c(rows, paste0('  [', cells, '],', collapse = "\n"))
 }
 
-# Columns 26 / 150 / 82 / 82 / 64 px, four equal key columns, 108 px.
+# Columns follow the design (26 / 82 / 82 / 64 / 108 px) except, by request, the
+# four key columns are 1.0 in each and the Tract column takes the freed width
+# (2.437 in; oneline() measures names against the same width).
 # Rows are a fixed 32 px (24 pt); stripes on even rows; key cells always tinted.
 table_open <- paste0(
   '#block(width: 100%, stroke: 0.75pt + rgb("', line_cool, '"), radius: 3.75pt, clip: true, breakable: true)[\n',
   '#table(\n',
-  '  columns: (0.271in, 1.5625in, 0.854in, 0.854in, 0.667in, 1fr, 1fr, 1fr, 1fr, 1.125in),\n',
+  '  columns: (0.271in, 2.437in, 0.854in, 0.854in, 0.667in, 1in, 1in, 1in, 1in, 1.125in),\n',
   '  rows: (24pt, auto) + (24pt,) * ', n_tracts, ',\n',
   '  inset: (x: 6pt, y: 0pt),\n',
   '  stroke: (x, y) => if y == 1 { (bottom: 1.5pt + rgb("', teal, '")) } ',
