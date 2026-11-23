@@ -10,6 +10,7 @@ Generates landscape-oriented PDF info sheets for every census tract on Utah's Op
 
 - **R 4.6.0** + **Quarto** + **Typst** — report generation (PDF via Typst, not LaTeX)
 - **sf**, **ggplot2**, **dplyr**, **purrr** — spatial analysis and mapping
+- **basemapper** (v0.1.0, `ar-puuk/basemapper/r-basemapper`) — UGRC Lite vector basemap via `basemapper::geom_basemap("UGRC.Lite")`, rendered at `ggsave()` time; installing from source needs Rust + the `x86_64-pc-windows-gnu` target + Rtools45
 - **renv** — dependency management (`renv.lock` is the source of truth)
 
 ## Commands
