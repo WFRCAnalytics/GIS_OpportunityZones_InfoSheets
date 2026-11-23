@@ -70,7 +70,12 @@ The pipeline runs in four stages inside `index.qmd`:
 ## Typst Layout — Critical Constraints
 
 ### Font
-**Poppins only.** Inter and Open Sans are variable fonts; Typst 0.14.2 cannot render bold weight for variable fonts. Poppins is a static font family — all weights work.
+**Poppins** (body) and **IBM Plex Mono** (GEOIDs, glossary, badges), both static families shipped in `assets/fonts/` (SIL OFL, licences alongside) and loaded through `font-paths: ["assets/fonts"]` in each child document's YAML — no system install needed. Inter and Open Sans are variable fonts; Typst 0.14.2 cannot render bold weight for variable fonts. Poppins has no "→" glyph: set arrows in IBM Plex Mono, or Typst falls back to Libertinus Serif. SVGs drawn in R (donut, gauge) must name `Poppins` as their font family, or they embed Arial.
+
+### Design source
+Layout sizes come from `handoff/visual-reference/summary_refined.jsx` and `detail_refined.jsx`. Their page is 1056 × 816 px for 11 × 8.5 in, so **1 px = 0.75 pt**: convert the mock's px values directly rather than estimating from the PNG renders.
+
+Typst sizes text boxes to the glyphs, while the browser gives every line its full line height, so the px spacings only carry over once text has browser-like line boxes. The detail sheet sets `#set text(top-edge: 1.1em, bottom-edge: -0.4em)` (Poppins' 1.5em "normal" line height: ascender 1.05 + descender 0.35 + line gap 0.1, text centred); the summary uses `top-edge: "ascender", bottom-edge: "descender"`. Where the mock sets its own `lineHeight` (title 1, key numbers 0.9, card labels 1.1), the text overrides the edges to match. To check fidelity, render a page at 288 dpi (same pixel size as the reference PNGs) and compare landmarks.
 
 ### Page dimensions
 Landscape, 11×8.5in, margins `x: 0.4in y: 0.35in` → **10.2in × 7.8in** usable.
@@ -85,6 +90,15 @@ In Typst markup mode, `(` immediately after `#function()` is parsed as a functio
 #linebreak()#[(Urban Institute)] ← OK: content block
 ```
 Wrap `(text)` in `#[(...)]` whenever it follows a Typst function call with no intervening text.
+
+### Parser gotcha — `/` at the start of content
+`[ / 3]` starts a term-list item and fails with "expected colon". Escape it: `[ \/ 3]` (in R source: `'[ \\/ 3]'`).
+
+### Parser gotcha — `#set` runs to end of line
+`#set par(leading: 0.3em)#align(...)` fails ("`#` is not valid in code"). End the rule with `;`: `#set par(leading: 0.3em);#align(...)`.
+
+### Page header placement
+A `#set page(header: ...)` header sits at the bottom of the top margin, so the top margin = desired top gap + header height. Adding `#v()` above the header pushes it down instead of opening a gap at the top.
 
 ### Intermediate PDF locking on Windows
 `quarto::quarto_render()` always compiles to `_county_summary.pdf` / `_county_detail.pdf` first (Typst uses the `.typ` basename), then renames to the `output_file`. If a PDF viewer has those files open, the pipeline fails with OS error 32. The `report` chunk has a pre-flight `file.remove()` check that stops early with a clear message if either file is locked.

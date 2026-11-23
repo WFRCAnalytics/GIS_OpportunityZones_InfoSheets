@@ -6,15 +6,20 @@ params:
 format:
   typst:
     margin:
-      x: 0.4in
-      y: 0.35in
+      x: 0.396in
+      top: 0.27in
+      bottom: 0.23in
     fontsize: 8pt
+    font-paths: ["assets/fonts"]
 ---
 
 ```{=typst}
-#set page(flipped: true)
+#set page(flipped: true, numbering: none)
 #set text(font: "Poppins", size: 8pt, number-type: "lining", number-width: "tabular")
-#set par(spacing: 0pt, leading: 0.5em)
+#set par(spacing: 0pt, leading: 0pt, justify: false)
+// Browser-like line boxes: Poppins "normal" line height is 1.5em (ascender 1.05 +
+// descender 0.35 + line gap 0.1), with the text centred in the box.
+#set text(top-edge: 1.1em, bottom-edge: -0.4em)
 ```
 
 ```{r}
@@ -92,17 +97,17 @@ donut_paths <- purrr::set_names(
       ggplot2::scale_fill_identity() +
       ggplot2::annotate("text", x = 0.5, y = 0,
         label = paste0(muc_total, "%"),
-        size = 4.2, fontface = "bold", color = "#003B4F", vjust = 0.5) +
+        size = 3.2, family = "Poppins", fontface = "bold", color = "#003B4F", vjust = 0.2) +
       ggplot2::annotate("text", x = 0.5, y = 0,
-        label = "MUorC", size = 2.5, color = "#7A848A", vjust = -1.8) +
+        label = "MUorC", family = "Poppins", size = 1.5, color = "#7A848A", vjust = 2.7) +
       ggplot2::theme_void() +
       ggplot2::theme(
         plot.background = ggplot2::element_rect(fill = "#F7FAFB", color = NA),
-        plot.margin     = ggplot2::margin(4, 4, 4, 4)
+        plot.margin     = ggplot2::margin(1, 1, 1, 1)
       )
     suppressWarnings(
       ggplot2::ggsave(filename = path, plot = p,
-                      width = 1.8, height = 1.8, device = svglite::svglite, bg = "#F7FAFB")
+                      width = 0.85, height = 0.85, device = svglite::svglite, bg = "#F7FAFB")
     )
     path
   }),
@@ -139,7 +144,7 @@ gauge_svg <- function(ato_val,
     sprintf('  <path d="%s" fill="none" stroke="%s" stroke-width="%d" stroke-linecap="round"/>', track, track_col, sw),
     if (!is.null(fill))
       sprintf('  <path d="%s" fill="none" stroke="%s" stroke-width="%d" stroke-linecap="round"/>', fill, fill_col, sw),
-    sprintf('  <text x="%.1f" y="%.1f" text-anchor="middle" dominant-baseline="central" font-family="Poppins,sans-serif" font-weight="700" font-size="%d" fill="%s">%s</text>',
+    sprintf('  <text x="%.1f" y="%.1f" text-anchor="middle" dominant-baseline="central" font-family="Poppins" font-weight="700" font-size="%d" fill="%s">%s</text>',
             cx, cy, fsz, text_col, lbl),
     '</svg>'
   ), collapse = "\n")
@@ -157,18 +162,20 @@ gauge_paths <- purrr::set_names(
 )
 
 # ── FKM card icons: static FontAwesome SVGs committed to assets/icons/ ──────────
-# Font Awesome Free 7.2.0 — CC BY 4.0 — https://fontawesome.com/license/free
+# Outline icons from the design (handoff/visual-reference/sample-data.jsx, Icon),
+# written as SVGs: key cards in their card colour, panel headers in teal-mid.
 icon_wc_path      <- "assets/icons/icon_wc.svg"
 icon_ato_path     <- "assets/icons/icon_ato.svg"
 icon_sap_path     <- "assets/icons/icon_sap.svg"
 icon_eru_path     <- "assets/icons/icon_eru.svg"
-icon_transit_path   <- "assets/icons/icon_sap.svg"
+icon_transit_path   <- "assets/icons/icon_transit.svg"
 icon_auto_path      <- "assets/icons/icon_auto.svg"
 icon_profile_path   <- "assets/icons/icon_profile.svg"
 icon_housing_path   <- "assets/icons/icon_housing.svg"
 icon_eru_panel_path <- "assets/icons/icon_eru_blue.svg"
 
 icon_paths <- list(wc        = icon_wc_path,
+                   wc_panel  = "assets/icons/icon_wc_panel.svg",
                    ato       = icon_ato_path,
                    sap       = icon_sap_path,
                    eru       = icon_eru_path,
@@ -190,6 +197,7 @@ teal_mid   <- "#0E5C72"
 teal_soft  <- "#3E7E91"
 sky        <- "#7EC8E3"
 amber      <- "#C77B30"
+amber_soft <- "#E7B77B"
 key_tint   <- "#F1F7F8"
 panel_fill <- "#F7FAFB"
 line_cool  <- "#CADDE2"
@@ -198,6 +206,8 @@ ink        <- "#16272D"
 body_c     <- "#3C4A4F"
 muted_c    <- "#7A848A"
 track      <- "#E4ECEE"
+line_warm  <- "#D9D2C6"
+kv_rule    <- "#EAF0F2"
 
 # ── Generic helpers ───────────────────────────────────────────────────────────
 fmt_val <- function(x, digits = 1, suffix = "", big_mark = "") {
@@ -266,118 +276,124 @@ tbar <- function(pct_val, bar_color, h = "4pt", r = "2pt") {
 # Panel section header: optional icon + teal uppercase + cool hairline
 phdr <- function(label, icon_path = NULL) {
   label_text <- paste0(
-    '#text(fill: rgb("', teal, '"), weight: "bold", size: 7pt, tracking: 0.6pt)[',
+    '#text(fill: rgb("', teal, '"), weight: "bold", size: 7.1pt, tracking: 0.45pt)[',
     toupper(label), ']'
   )
   inner <- if (!is.null(icon_path)) {
     paste0(
-      '#grid(columns: (auto, 1fr), gutter: 4pt, align: left + horizon,',
-      '[#image("', icon_path, '", width: 9pt, height: 9pt)],',
+      '#grid(columns: (auto, 1fr), gutter: 4.5pt, align: left + horizon,',
+      '[#image("', icon_path, '", width: 10.5pt, height: 10.5pt)],',
       '[', label_text, '])'
     )
   } else {
     label_text
   }
   paste0(
-    '#block(width: 100%, inset: (x: 6pt, top: 4pt, bottom: 0pt), below: 0pt)',
+    '#block(width: 100%, inset: (x: 7.5pt, top: 5.25pt, bottom: 4.5pt), below: 0pt)',
     '[', inner, ']',
-    '#v(1pt)',
-    '#line(length: 100%, stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt))'
+    '#line(length: 100%, stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt))',
+    '#v(2pt)'
+  )
+}
+
+# Hairline row separator, inset from the panel edges
+row_rule <- function() {
+  paste0(
+    '#block(inset: (x: 7.5pt), width: 100%)',
+    '[#line(length: 100%, stroke: (paint: rgb("', kv_rule, '"), thickness: 0.75pt))]'
   )
 }
 
 # KV row: label left / value right, hairline below
-mkv <- function(label, value) {
+mkv <- function(label, value, rule = TRUE) {
   paste0(
-    '#block(inset: (x: 6pt, y: 2.5pt), width: 100%)',
-    '[#grid(columns: (1fr, auto), gutter: 2pt,',
-    '[#text(fill: rgb("', body_c, '"), size: 6.5pt)[', label, ']],',
-    '[#text(fill: rgb("', ink,    '"), size: 8pt, weight: "semibold")[', value, ']])]',
-    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))'
+    '#block(inset: (x: 7.5pt, y: 2.8pt), width: 100%)',
+    '[#grid(columns: (1fr, auto), gutter: 4pt, align: (left + top, right + top),',
+    '[#text(fill: rgb("', body_c, '"), size: 7.1pt)[', label, ']],',
+    '[#text(fill: rgb("', ink,    '"), size: 8.25pt, weight: "semibold")[', value, ']])]',
+    if (rule) row_rule() else ""
   )
 }
 
 # KV row with bar below label/value
-mkv_bar <- function(label, value, bar_pct, bar_color = teal) {
+mkv_bar <- function(label, value, bar_pct, bar_color = teal, rule = TRUE) {
   paste0(
-    '#block(inset: (x: 6pt, top: 2pt, bottom: 1pt), width: 100%)',
-    '[#grid(columns: (1fr, auto), gutter: 2pt,',
-    '[#text(fill: rgb("', body_c, '"), size: 6.5pt)[', label, ']],',
-    '[#text(fill: rgb("', ink,    '"), size: 8pt, weight: "semibold")[', value, ']])',
-    '#v(1.5pt)', tbar(bar_pct, bar_color), ']',
-    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))'
+    '#block(inset: (x: 7.5pt, top: 2.8pt, bottom: 2.8pt), width: 100%)',
+    '[#grid(columns: (1fr, auto), gutter: 4pt, align: (left + top, right + top),',
+    '[#text(fill: rgb("', body_c, '"), size: 7.1pt)[', label, ']],',
+    '[#text(fill: rgb("', ink,    '"), size: 8.25pt, weight: "semibold")[', value, ']])',
+    '#v(2.25pt)', tbar(bar_pct, bar_color, h = "3pt", r = "2.25pt"), ']',
+    if (rule) row_rule() else ""
   )
+}
+
+# Evenly distribute rows over the remaining height of a stretched panel.
+# `lead` (optional) sits at its natural height above the spread rows.
+spread_rows <- function(rows, lead = NULL) {
+  n     <- length(rows)
+  specs <- paste(c(if (!is.null(lead)) "auto", rep("1fr", n)), collapse = ", ")
+  cells <- paste0("[", c(lead, rows), "]", collapse = ",")
+  paste0('#grid(columns: (100%,), rows: (', specs, ',), align: horizon,', cells, ')')
 }
 
 # Panel box wrapper: panel-fill background, cool border, 5pt radius
 panel_box <- function(header_str, body_str, fill_h = FALSE) {
+  # A stretched panel is a two-row grid so the body's 1fr rows share only the
+  # height left under the header.
+  inner <- if (fill_h) {
+    paste0('#grid(columns: (100%,), rows: (auto, 1fr), [', header_str, '], [', body_str, '])')
+  } else {
+    paste0(header_str, body_str)
+  }
   h_attr <- if (fill_h) ", height: 100%" else ""
   paste0(
     '#block(fill: rgb("', panel_fill, '"), ',
     'stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt), ',
-    'radius: 5pt, inset: 0pt, clip: true, width: 100%', h_attr, ')',
-    '[', header_str, body_str, ']'
+    'radius: 3.75pt, inset: (bottom: 4.5pt), clip: true, width: 100%', h_attr, ')',
+    '[', inner, ']'
   )
 }
 
 # Key measure card for the Four Key Measures band
-key_card <- function(top_color, label_upper, value_str, unit_str, bar_pct_val, caption_str, bar_color, icon_fwd = NULL) {
-  fp  <- if (!is.null(bar_pct_val) && !is.na(bar_pct_val) && is.finite(as.numeric(bar_pct_val)))
-           min(max(as.numeric(bar_pct_val), 0), 100) else NULL
-  bar_t <- if (!is.null(fp)) {
-    fpp <- paste0(format(round(fp, 1), nsmall = 1), "%")
-    paste0(
-      '#block(width: 100%, height: 5pt, fill: rgb("', track, '"), radius: 2pt)',
-      '[#block(width: ', fpp, ', height: 5pt, fill: rgb("', bar_color, '"), radius: 2pt)[]]'
-    )
-  } else {
-    paste0('#block(width: 100%, height: 5pt, fill: rgb("', track, '"), radius: 2pt)[]')
-  }
-  unit_t <- if (nchar(unit_str) > 0)
-    paste0('#h(3pt)#text(fill: rgb("', body_c, '"), size: 10pt, baseline: -2pt)[', unit_str, ']')
-  else ""
-  lbl_t  <- paste0('#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']')
-  hdr_t  <- if (!is.null(icon_fwd))
-    paste0('#grid(columns: (12pt, 1fr), gutter: 4pt, align: left + horizon,',
-           '[#image("', icon_fwd, '", width: 12pt, height: 12pt)],[', lbl_t, '])')
-  else lbl_t
-
+key_label <- function(label_upper, icon_fwd) {
+  lbl_t <- paste0('#text(fill: rgb("', body_c, '"), size: 6.4pt, weight: "bold", tracking: 0.3pt, top-edge: 0.9em, bottom-edge: -0.2em)[', label_upper, ']')
+  if (is.null(icon_fwd)) return(lbl_t)
+  paste0('#grid(columns: (11.25pt, 1fr), gutter: 4.5pt, align: left + horizon,',
+         '[#image("', icon_fwd, '", width: 11.25pt, height: 11.25pt)],[', lbl_t, '])')
+}
+key_shell <- function(top_color, inner) {
   paste0(
-    '#block(fill: rgb("', key_tint, '"), stroke: 0.75pt + rgb("', line_cool, '"), ',
-    'radius: 5pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
-    '[#block(height: 3pt, width: 100%, fill: rgb("', top_color, '"))[]',
-    '#block(inset: (x: 8pt, top: 6pt, bottom: 2pt), width: 100%)',
-    '[', hdr_t,
-    '#v(5pt)',
-    '#text(fill: rgb("', ink, '"), size: 26pt, weight: "bold")[', value_str, ']',
-    unit_t,
-    '#v(8pt)',
-    bar_t,
-    '#v(2pt)',
-    '#text(fill: rgb("', muted_c, '"), size: 6.5pt)[', caption_str, ']',
-    ']]'
+    '#block(fill: white, stroke: 0.75pt + rgb("', line_cool, '"), ',
+    'radius: 3.75pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
+    '[#block(height: 2.25pt, width: 100%, fill: rgb("', top_color, '"))[]',
+    '#block(inset: (x: 9pt, top: 6.75pt, bottom: 7.5pt), width: 100%)[', inner, ']]'
   )
 }
 
-# Gauge card for ATO (ring image left + caption text right, no big number)
+key_card <- function(top_color, label_upper, value_str, unit_str, bar_pct_val, caption_str, bar_color, icon_fwd = NULL) {
+  unit_t <- if (nchar(unit_str) > 0)
+    paste0('#h(2.25pt)#text(fill: rgb("', muted_c, '"), size: 9pt, weight: "semibold")[', unit_str, ']')
+  else ""
+  key_shell(top_color, paste0(
+    key_label(label_upper, icon_fwd),
+    '#v(6pt)',
+    '#text(fill: rgb("', ink, '"), size: 22.5pt, weight: "bold", top-edge: 0.8em, bottom-edge: -0.1em)[', value_str, ']', unit_t,
+    '#v(5.25pt)',
+    tbar(bar_pct_val, bar_color, h = "3.75pt", r = "2.25pt"),
+    '#v(3.75pt)',
+    '#text(fill: rgb("', muted_c, '"), size: 6pt)[', caption_str, ']'
+  ))
+}
+
+# Gauge card for ATO (ring image left + caption right)
 gauge_card <- function(top_color, label_upper, gauge_img_path, caption_str, icon_fwd = NULL) {
-  lbl_t <- paste0('#text(fill: rgb("', teal, '"), size: 7pt, weight: "bold", tracking: 0.6pt)[', label_upper, ']')
-  hdr_t <- if (!is.null(icon_fwd))
-    paste0('#grid(columns: (12pt, 1fr), gutter: 4pt, align: left + horizon,',
-           '[#image("', icon_fwd, '", width: 12pt, height: 12pt)],[', lbl_t, '])')
-  else lbl_t
-  paste0(
-    '#block(fill: rgb("', key_tint, '"), stroke: 0.75pt + rgb("', line_cool, '"), ',
-    'radius: 5pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
-    '[#block(height: 3pt, width: 100%, fill: rgb("', top_color, '"))[]',
-    '#block(inset: (x: 8pt, top: 6pt, bottom: 7pt), width: 100%)',
-    '[', hdr_t,
-    '#v(5pt)',
-    '#grid(columns: (auto, 1fr), gutter: 8pt, align: horizon,',
-    '[#image("', gauge_img_path, '", width: 40pt, height: 40pt)],',
-    '[#text(fill: rgb("', muted_c, '"), size: 6.5pt)[', caption_str, ']]',
-    ')]]'
-  )
+  key_shell(top_color, paste0(
+    key_label(label_upper, icon_fwd),
+    '#v(4.5pt)',
+    '#grid(columns: (auto, 1fr), gutter: 7.5pt, align: horizon,',
+    '[#image("', gauge_img_path, '", width: 42pt, height: 42pt)],',
+    '[#text(fill: rgb("', muted_c, '"), size: 6.75pt)[', caption_str, ']])'
+  ))
 }
 
 # ── Resolve static icon paths once (shared across all tract pages) ─────────────
@@ -422,32 +438,25 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
 
   # ── Header band (summary-style) ───────────────────────────────────────────────
   hdr_right <- paste0(
-    '#align(right + horizon)',
-    '[#text(fill: rgb("', sky, '"), size: 5.5pt, tracking: 1pt)[INVESTMENT LIKELIHOOD]',
-    '#linebreak()#v(3pt)',
-    '#box(fill: rgb(', oz_fill, '), radius: 3pt, inset: (x: 8pt, y: 4pt))',
-    '[#text(fill: white, weight: "bold", size: 8pt)[', oz_lbl, ']]',
-    '#linebreak()#v(2pt)',
-    '#text(fill: rgb("', sky, '"), size: 5.5pt)[Urban Institute OZ Tool]',
-    ']'
+    '#align(right + horizon)[#stack(dir: ttb, spacing: 2.25pt,',
+    '[#text(fill: rgb("', sky, '"), size: 5.6pt, tracking: 0.75pt)[INVESTMENT LIKELIHOOD]],',
+    '[#box(fill: rgb(', oz_fill, '), radius: 3pt, inset: (x: 8.25pt, y: 3.75pt))',
+    '[#box(baseline: -0.5pt)[#circle(radius: 3pt, fill: white.transparentize(15%))]#h(5.25pt)',
+    '#text(fill: white, weight: "bold", size: 9.75pt)[', oz_lbl, ']]],',
+    '[#text(fill: rgb("#9FC4D0"), size: 5.6pt)[Urban Institute OZ Tool]])]'
   )
   hdr_band <- paste0(
-    '#block(width: 100%, fill: rgb("', teal, '"), inset: (x: 0.15in, y: 0.21in), radius: 6pt, below: 0pt)',
-    '[',
-    '#place(right + horizon)[', hdr_right, ']',
-    '#grid(columns: (auto, 1fr), gutter: 0.07in, align: left + horizon,',
-    '[#rect(fill: none, stroke: (paint: rgb("', sky, '"), thickness: 0.5pt), inset: (x: 6pt, y: 5pt), radius: 2pt)',
-    '[#align(center)[#text(fill: rgb("', sky, '"), weight: "bold", size: 6pt)[WFRC#linebreak()MAG]]]],',
-    '[#stack(dir: ttb, spacing: 6pt,',
-    '[#text(fill: white, weight: "bold", size: 16pt)[', county_str, ' County]',
-    '#h(6pt)#text(fill: rgb("', sky, '"), size: 8pt)[Opportunity Zone 2.0]],',
-    '[#text(fill: rgb("', sky, '"), size: 7pt)[Census Tract ', geoid_str, ' · ', as.character(g("TractName")), ' · ', acres_str, ' acres]]',
-    ')]',
-    ')]'
-  )
-
-  sky_rule <- paste0(
-    '#line(length: 100%, stroke: (paint: rgb("', sky, '"), thickness: 1.5pt))'
+    '#block(width: 100%, fill: rgb("', teal, '"), inset: (x: 12pt, y: 9pt), radius: 3.75pt, below: 0pt)[',
+    '#grid(columns: (auto, 1fr, auto), column-gutter: 9.75pt, align: horizon,',
+    '[#rect(fill: none, stroke: 0.75pt + rgb("', teal_soft, '"), inset: (x: 6pt, y: 3.75pt), radius: 3pt)',
+    '[#set par(leading: -0.35em);#align(center)[#text(font: "IBM Plex Mono", fill: rgb("', sky, '"), ',
+    'weight: "semibold", size: 6.75pt, tracking: 0.75pt)[WFRC#linebreak()MAG]]]],',
+    '[#stack(dir: ttb, spacing: 2.25pt,',
+    '[#text(fill: white, weight: "bold", size: 15.75pt, top-edge: 0.85em, bottom-edge: -0.15em)[', county_str, ' County]',
+    '#text(fill: rgb("', sky, '"), weight: "regular", size: 15.75pt, top-edge: 0.85em, bottom-edge: -0.15em)[ · Opportunity Zone 2.0]],',
+    '[#text(fill: rgb("#CFE6EE"), size: 7.9pt)[Census Tract ', geoid_str, '  ·  ',
+    as.character(g("TractName")), '  ·  ', acres_str, ' acres]])],',
+    '[', hdr_right, '])]'
   )
 
   # ── Four Key Measures band ────────────────────────────────────────────────────
@@ -459,25 +468,25 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
   sap_bar <- if (!is.na(sap_val) && is.finite(sap_val)) min(sap_val / 35 * 100, 100) else NA_real_
   eru_bar <- if (!is.na(eru_val) && is.finite(eru_val)) min(eru_val / 10 * 100, 100) else NA_real_
 
-  c1 <- key_card(teal,      "WASATCH CHOICE CENTERS",   fv("wc_muc_pct", 1),              "%",     muc_pct, "% of tract in metro / urban / city center", teal,      icon_fwd_list$wc)
+  c1 <- key_card(teal,      "MUORC CENTER COVERAGE",    fv("wc_muc_pct", 1),              "%",     muc_pct, "% of tract in metro / urban / city center", teal,      icon_fwd_list$wc)
   c2 <- gauge_card(teal_mid, "ACCESS TO OPPORTUNITIES", gauge_fwd, "composite drive + transit index", icon_fwd_list$ato)
   c3 <- key_card(teal_soft, "SAP PLANNED HOUSING",      fv("sap_planned_hh_per_acre", 1),  "HH/ac", sap_bar, "station area plan, planned units",          teal_soft, icon_fwd_list$sap)
   c4 <- key_card(amber,     "PROJECTED GROWTH 2027-37", fv("eru_per_acre", 1),             "ERU/ac",eru_bar, "equivalent residential units added",        amber,     icon_fwd_list$eru)
 
   fkm <- paste0(
-    '#text(fill: rgb("', amber, '"), weight: "bold", size: 6.5pt, tracking: 1.4pt)[FOUR KEY MEASURES]',
-    '#v(2pt)',
-    '#line(length: 100%, stroke: (paint: rgb("', amber, '"), thickness: 0.5pt))',
-    '#v(4pt)',
-    '#grid(columns: (1fr, 1fr, 1fr, 1fr), rows: (76pt), gutter: 0.08in,',
+    '#grid(columns: (auto, 1fr), gutter: 8pt, align: horizon,',
+    '[#text(fill: rgb("', amber, '"), weight: "bold", size: 6.75pt, tracking: 1.05pt)[FOUR KEY MEASURES]],',
+    '[#line(length: 100%, stroke: (paint: rgb("', line_warm, '"), thickness: 0.75pt))])',
+    '#v(4.5pt)',
+    '#grid(columns: (1fr, 1fr, 1fr, 1fr), rows: (76pt), gutter: 9pt,',
     '[', c1, '],[', c2, '],[', c3, '],[', c4, '])'
   )
 
   # ── Col 2: Tract Profile panel ────────────────────────────────────────────────
-  kv2 <- function(l1, v1, l2, v2) {
+  kv2 <- function(l1, v1, l2, v2, rule = TRUE) {
     paste0(
       '#grid(columns: (1fr, 1fr), gutter: 0pt,',
-      '[', mkv(l1, v1), '],[', mkv(l2, v2), '])'
+      '[', mkv(l1, v1, rule), '],[', mkv(l2, v2, rule), '])'
     )
   }
   profile_body <- paste0(
@@ -486,9 +495,9 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     kv2("Total acres",     fv("total_acres", 1),
         "Developable",     fv("dev_acres",   1)),
     kv2("OZ 1.0 overlap",  paste0(fv("oz1_acres", 1), " ac"),
-        "OZ 1.0 % of tract", fv("oz1_pct",  1, "%"))
+        "OZ 1.0 % of tract", fv("oz1_pct",  1, "%"), rule = FALSE)
   )
-  profile_panel <- panel_box(phdr("TRACT PROFILE", icon_fwd_list$profile), profile_body, fill_h = TRUE)
+  profile_panel <- panel_box(phdr("TRACT PROFILE", icon_fwd_list$profile), profile_body)
 
   # ── Col 2: Centers & Districts panel ──────────────────────────────────────────
   center_defs <- list(
@@ -500,22 +509,21 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     list(col = "wc_pct_industrial_district", lbl = "Industrial Dist.",  clr = "#b8a8d8"),
     list(col = "wc_pct_retail_district",     lbl = "Retail Dist.",      clr = "#f4b8bb")
   )
-  centers_bars <- paste0(
-    mkv_bar("Wasatch Choice total (MUorC)", fv("wc_muc_pct", 1, "%"), muc_pct, teal),
-    paste0(vapply(center_defs, function(d) {
-      mkv_bar(d$lbl, fv(d$col, 1, "%"), g(d$col), d$clr)
-    }, character(1)), collapse = "")
+  n_defs <- length(center_defs)
+  centers_rows <- vapply(seq_len(n_defs), function(k) {
+    d <- center_defs[[k]]
+    mkv_bar(d$lbl, fv(d$col, 1, "%"), g(d$col), d$clr, rule = k < n_defs)
+  }, character(1))
+  centers_lead <- paste0(
+    '#block(inset: (x: 8pt, top: 2pt, bottom: 4pt), width: 100%)',
+    '[#grid(columns: (0.77in, 1fr), gutter: 9pt, align: horizon,',
+    '[#image("', donut_fwd, '", width: 100%)],',
+    '[#text(fill: rgb("', body_c, '"), size: 6.4pt)',
+    '[Share of tract land within each Wasatch Choice center or regionally significant district.]])]',
+    row_rule()
   )
-  centers_body <- paste0(
-    '#grid(columns: (1.5in, 1fr), gutter: 0pt, align: top,',
-    '[#block(inset: (x: 6pt, top: 4pt, bottom: 4pt))',
-    '[#image("', donut_fwd, '", width: 100%)',
-    '#v(3pt)',
-    '#text(fill: rgb("', muted_c, '"), size: 5pt)',
-    '[Share of tract in each Wasatch Choice center or district]]],',
-    '[', centers_bars, '])'
-  )
-  centers_panel <- panel_box(phdr("CENTERS & DISTRICTS (% OF TRACT)", icon_fwd_list$wc), centers_body, fill_h = TRUE)
+  centers_body <- paste0(centers_lead, paste0(centers_rows, collapse = ""))
+  centers_panel <- panel_box(phdr("CENTERS & DISTRICTS (% OF TRACT)", icon_fwd_list$wc_panel), centers_body, fill_h = TRUE)
 
   # ── Col 3: Housing panel ──────────────────────────────────────────────────────
   housing_body <- paste0(
@@ -525,9 +533,9 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
         "MF / SFA acres", fv("res_acres_mf_sfa",1)),
     kv2("Poverty rate",   pvrty_str,
         "Unemployment",   unmpl_str),
-    mkv("Median family income", mfi_str)
+    paste0('#grid(columns: (1fr, 1fr), gutter: 0pt, [', mkv("Median family income", mfi_str, rule = FALSE), '], [])')
   )
-  housing_panel <- panel_box(phdr("HOUSING & DEMOGRAPHICS", icon_fwd_list$housing), housing_body, fill_h = TRUE)
+  housing_panel <- panel_box(phdr("HOUSING & DEMOGRAPHICS", icon_fwd_list$housing), housing_body)
 
   # ── Col 3: Transit panel ──────────────────────────────────────────────────────
   transit_body <- paste0(
@@ -535,7 +543,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
     mkv("SAP acres",          fv("sap_acres",          1)),
     mkv_bar("SAP % of tract", fv("sap_pct", 1, "%"), g("sap_pct"), teal_soft),
     mkv("ATO jobs (transit)", fv("ato_jobtransit", 0, m = ",")),
-    mkv("ATO HHs (transit)",  fv("ato_hhtransit",  0, m = ","))
+    mkv("ATO HHs (transit)",  fv("ato_hhtransit",  0, m = ","), rule = FALSE)
   )
   transit_panel <- panel_box(phdr("TRANSIT", icon_fwd_list$transit), transit_body, fill_h = TRUE)
 
@@ -543,7 +551,7 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
   auto_body <- paste0(
     mkv("Freeway exits",   fv("freeway_exit_count", 0)),
     mkv("ATO jobs (auto)", fv("ato_jobauto", 0, m = ",")),
-    mkv("ATO HHs (auto)",  fv("ato_hhauto",  0, m = ","))
+    mkv("ATO HHs (auto)",  fv("ato_hhauto",  0, m = ","), rule = FALSE)
   )
   auto_panel <- panel_box(phdr("AUTO ACCESS", icon_fwd_list$auto), auto_body, fill_h = TRUE)
 
@@ -555,59 +563,75 @@ tract_page <- function(tract, map_path, donut_path, is_first) {
   growth_body <- paste0(
     kv2("Households added", hh_plus,  "Population added", pop_plus),
     kv2("Jobs added",       job_plus, "ERU added",        eru_plus),
-    mkv_bar("ERU / acre", fv("eru_per_acre", 1), eru_bar, amber)
+    mkv_bar("ERU / acre", fv("eru_per_acre", 1), eru_bar, amber, rule = FALSE)
   )
-  growth_panel <- panel_box(phdr("PROJECTED GROWTH 2027-37", icon_fwd_list$eru_panel), growth_body, fill_h = TRUE)
+  growth_panel <- panel_box(phdr("PROJECTED GROWTH 2027-37", icon_fwd_list$eru_panel), growth_body)
 
-  # ── Col 3: transit+auto side-by-side grid (fills 1fr row, panels stretch full height) ──
+  # ── Col 3: transit+auto side by side (fills the 1fr row; panels stretch full height) ──
   transit_auto <- paste0(
-    '#block(height: 100%, width: 100%)',
-    '[#grid(columns: (1fr, 1fr), rows: (1fr), gutter: 0.08in,',
-    '[', transit_panel, '],[', auto_panel, '])]'
+    '#grid(columns: (1fr, 1fr), rows: (1fr,), gutter: 9pt,',
+    '[', transit_panel, '],[', auto_panel, '])'
   )
 
   # ── Footer ────────────────────────────────────────────────────────────────────
   footer <- paste0(
-    '#line(length: 100%, stroke: (paint: rgb("', hair, '"), thickness: 0.5pt))',
-    '#v(1pt)',
-    '#grid(columns: (1fr, auto), gutter: 4pt,',
-    '[#text(fill: rgb("', muted_c, '"), size: 5.5pt)',
-    '[Sources: Federal OZ 2.0 eligibility, Urban Institute OZ Tool, WFRC/MAG regional data. Growth projections 2027-2037.]],',
-    '[#text(fill: rgb("', muted_c, '"), size: 5.5pt)',
-    '[ATO = Access to Opportunities · ERU = Equiv. Residential Unit · SAP = Station Area Plan · MUorC = Metro/Urban/City Center]])'
+    '#line(length: 100%, stroke: (paint: rgb("', line_warm, '"), thickness: 0.75pt))',
+    '#v(3.75pt)',
+    '#grid(columns: (auto, 1fr, auto), align: horizon,',
+    '[#text(fill: rgb("', muted_c, '"), size: 5.6pt)[Sources: Federal OZ 2.0 eligibility · Urban Institute OZ Tool · ',
+    'WFRC / MAG regional data. Growth projections 2027–2037.]], [],',
+    '[#text(font: "IBM Plex Mono", fill: rgb("', muted_c, '"), size: 5.6pt)',
+    '[ATO = Access to Opportunities · ERU = Equiv. Residential Unit · SAP = Station Area Plan · MUorC = Metro/Urban/City center]])'
   )
 
   # ── Assemble full page ────────────────────────────────────────────────────────
+  # Legend item: inline swatch + label (boxes keep swatch and text on one line)
+  leg_item <- function(swatch, label) {
+    paste0('[#box(baseline: 1pt)[', swatch, ']#h(3pt)',
+           '#text(fill: rgb("', body_c, '"), size: 5.5pt)[', label, ']]')
+  }
   map_legend <- paste0(
-    '#grid(columns: (auto, auto, auto), column-gutter: 8pt, align: left + horizon,',
-    '[#line(length: 8pt, stroke: (paint: rgb("#0072b5"), dash: "dashed", thickness: 1.2pt))',
-    '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[SAP buffer]],',
-    '[#box(fill: rgb("#943030"), radius: 2.5pt, width: 5pt, height: 5pt)[]',
-    '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[Rail/BRT]],',
-    '[#box(fill: rgb("#3A4A5A"), width: 5pt, height: 5pt)[]',
-    '#h(2pt)#text(fill: rgb("', muted_c, '"), size: 4.5pt)[Freeway exit]])'
+    '#grid(columns: (auto,) * 5, column-gutter: 9pt, align: left + horizon,',
+    leg_item(paste0('#rect(width: 9pt, height: 6pt, fill: none, stroke: 1.4pt + rgb("', teal, '"))'), "This tract"), ',',
+    leg_item('#rect(width: 9pt, height: 6pt, fill: none, stroke: 0.8pt + rgb("#C4A43A"))', "Other OZ"), ',',
+    leg_item('#line(length: 10pt, stroke: (paint: rgb("#0072b5"), dash: "dashed", thickness: 1pt))', "SAP buffer"), ',',
+    leg_item('#circle(radius: 3pt, fill: rgb("#943030"), stroke: 0.5pt + white)', "Rail / BRT"), ',',
+    leg_item('#polygon.regular(vertices: 3, size: 7pt, fill: rgb("#3A4A5A"))', "Freeway exit"),
+    ')'
   )
   map_cell <- paste0(
     '[#block(fill: white, ',
     'stroke: (paint: rgb("', line_cool, '"), thickness: 0.75pt), ',
-    'radius: 5pt, inset: 0pt, clip: true, width: 100%)',
-    '[#image("', map_fwd, '", width: 100%)',
-    '#block(fill: rgb("', panel_fill, '"), width: 100%, inset: (x: 5pt, top: 3pt, bottom: 4pt))',
-    '[#text(fill: rgb("', teal, '"), weight: "bold", size: 5.5pt, tracking: 0.5pt)',
-    '[TRACT ', substr(geoid_str, 6, 11), ']',
-    '#v(2pt)',
-    map_legend, ']]]'
+    'radius: 3.75pt, inset: 0pt, clip: true, width: 100%, height: 100%)',
+    '[#image("', map_fwd, '", width: 100%, height: 100%, fit: "cover")',
+    '#place(top + left, dx: 8pt, dy: 8pt)',
+    '[#box(fill: white.transparentize(8%), radius: 3pt, inset: (x: 6pt, y: 3.5pt))',
+    '[#text(font: "IBM Plex Mono", fill: rgb("', teal, '"), weight: "bold", size: 7pt, tracking: 0.6pt)',
+    '[TRACT ', substr(geoid_str, 6, 11), ']]]',
+    '#place(bottom + center, dy: -8pt)',
+    '[#box(fill: white.transparentize(8%), radius: 3pt, inset: (x: 7pt, y: 4pt))[', map_legend, ']]',
+    ']]'
   )
   main_grid <- paste0(
-    '#grid(columns: (3.6in, 3.0in, 1fr), rows: (378pt), gutter: 0.15in,',
+    '#grid(columns: (3.75in, 3.125in, 1fr), rows: (1fr,), gutter: 10.5pt,',
     map_cell, ',',
-    '[#grid(rows: (80pt, 1fr), gutter: 0.1in,',
+    '[#grid(columns: (100%,), rows: (auto, 1fr), gutter: 9pt,',
     '[', profile_panel, '],[', centers_panel, '])],',
-    '[#grid(rows: (109pt, 1fr, 96pt), gutter: 0.1in,',
+    '[#grid(columns: (100%,), rows: (auto, 1fr, auto), gutter: 9pt,',
     '[', housing_panel, '],[', transit_auto, '],[', growth_panel, '])])'
   )
 
-  paste0(c(pb, hdr_band, sky_rule, "#v(4pt)", fkm, "#v(0.1in)", main_grid, "#v(0.05in)", footer), collapse = "\n")
+  # One grid per page: header and key band at their natural height, the main
+  # grid takes all remaining height, footer pinned to the bottom.
+  page_grid <- paste0(
+    '#grid(columns: (100%,), rows: (auto, auto, 1fr, auto), row-gutter: 8.5pt,',
+    '[', hdr_band, '],',
+    '[', fkm, '],',
+    '[', main_grid, '],',
+    '[', footer, '])'
+  )
+
+  paste0(c(pb, page_grid), collapse = "\n")
 }
 
 # ── Emit one Typst block per tract ────────────────────────────────────────────
