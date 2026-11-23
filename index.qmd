@@ -972,7 +972,7 @@ make_tract_map <- function(geoid, map_crs = 3857L) {
   #      The plot carries `focal` as data so the basemap layer is never empty
   #      (ggplot2 skips drawing layers with zero-row data).
   ggplot2::ggplot(focal) +
-    basemapper::geom_basemap(.basemap_style) +
+    basemapper::geom_basemap(.basemap_style, attribution = FALSE) +
     ggplot2::geom_sf(data=wc_view,    ggplot2::aes(fill=CenterType), color=NA, alpha=0.6) +
     ggplot2::scale_fill_manual(values=wc_center_colors, name=NULL, na.value="#C8C0C0", drop=TRUE) +
     ggplot2::geom_sf(data=other_view, fill=NA, color="#C4A43A",  linewidth=0.3) +
